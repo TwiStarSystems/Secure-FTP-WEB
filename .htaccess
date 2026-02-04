@@ -1,0 +1,52 @@
+# Apache configuration for Secure FTP Web
+# Security headers and protections
+
+# Disable directory browsing
+Options -Indexes
+
+# Enable rewrite engine
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Redirect to login if accessing root
+    RewriteCond %{REQUEST_URI} ^/$
+    RewriteRule ^$ /login.php [L,R=301]
+</IfModule>
+
+# Protect sensitive files
+<FilesMatch "^(config\.php|db\.php|auth\.php|users\.php|files\.php|database\.sql)$">
+    Require all denied
+</FilesMatch>
+
+# Protect .git directory
+<DirectoryMatch "\.git">
+    Require all denied
+</DirectoryMatch>
+
+# Security headers
+<IfModule mod_headers.c>
+    # Prevent MIME type sniffing
+    Header set X-Content-Type-Options "nosniff"
+    
+    # Enable XSS protection
+    Header set X-XSS-Protection "1; mode=block"
+    
+    # Prevent clickjacking
+    Header set X-Frame-Options "SAMEORIGIN"
+    
+    # Remove server signature
+    Header unset Server
+    Header unset X-Powered-By
+</IfModule>
+
+# PHP security settings (if not set in php.ini)
+<IfModule mod_php7.c>
+    php_flag expose_php Off
+    php_flag display_errors Off
+    php_flag log_errors On
+</IfModule>
+
+# Limit request methods
+<LimitExcept GET POST>
+    Require all denied
+</LimitExcept>
