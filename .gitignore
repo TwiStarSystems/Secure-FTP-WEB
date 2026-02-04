@@ -1,0 +1,39 @@
+# Ignore uploads directory contents but keep the directory
+uploads/*
+!uploads/.gitkeep
+
+# Ignore IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Ignore logs
+*.log
+error_log
+access_log
+
+# Ignore temporary files
+tmp/
+temp/
+*.tmp
+
+# Ignore environment-specific config (if you create one)
+config.local.php
+
+# Ignore composer dependencies (if you add composer)
+/vendor/
+
+# Ignore npm dependencies (if you add npm)
+node_modules/
+
+# Ignore backup files
+*.bak
+*.backup
+*.sql.gz
+*.sql.zip
+
+# Ignore OS generated files
+Thumbs.db
