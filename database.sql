@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 );
 
 -- Create default admin user (username: admin, password: admin123)
+-- IMPORTANT: Change this password immediately after installation!
 -- Password hash for 'admin123'
 INSERT INTO users (username, password_hash, email, is_admin, upload_quota, is_temporary) 
 VALUES ('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin@example.com', TRUE, 107374182400, FALSE)

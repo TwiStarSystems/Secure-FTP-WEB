@@ -2,10 +2,11 @@
 // Configuration file for Secure FTP Web Application
 
 // Database configuration
+// IMPORTANT: Change these values for production!
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'secure_ftp');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_USER', 'secure_ftp_user');  // Create a dedicated database user
+define('DB_PASS', 'CHANGE_THIS_PASSWORD');  // Set a strong password
 
 // Application settings
 define('SITE_NAME', 'Secure File Transfer');

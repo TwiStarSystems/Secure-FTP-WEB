@@ -313,14 +313,25 @@ BACKUP_DIR="/var/backups/secure-ftp"
 DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p $BACKUP_DIR
 
-# Backup database
-mysqldump -u secure_ftp_user -p'your_password' secure_ftp | gzip > $BACKUP_DIR/db_$DATE.sql.gz
+# Backup database using MySQL config file (credentials stored securely)
+# Create ~/.my.cnf with [client] section containing user and password
+mysqldump --defaults-extra-file=~/.my.cnf secure_ftp | gzip > $BACKUP_DIR/db_$DATE.sql.gz
 
 # Backup uploads
 tar -czf $BACKUP_DIR/uploads_$DATE.tar.gz /var/www/html/secure-ftp/uploads/
 
 # Remove backups older than 30 days
 find $BACKUP_DIR -type f -mtime +30 -delete
+```
+
+Create MySQL config file for secure credentials:
+```bash
+cat > ~/.my.cnf << EOF
+[client]
+user=secure_ftp_user
+password=your_password_here
+EOF
+chmod 600 ~/.my.cnf
 ```
 
 Make executable and schedule:

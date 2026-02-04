@@ -29,9 +29,13 @@ if (!$result['success']) {
     die('Error: ' . $result['error']);
 }
 
+// Sanitize filename to prevent header injection
+$safeFilename = preg_replace('/[^\w\-\.]/', '_', $result['filename']);
+$safeFilename = str_replace(["\r", "\n", "\0"], '', $safeFilename);
+
 // Set headers for file download
 header('Content-Type: ' . $result['mime_type']);
-header('Content-Disposition: attachment; filename="' . $result['filename'] . '"');
+header('Content-Disposition: attachment; filename="' . $safeFilename . '"');
 header('Content-Length: ' . filesize($result['filepath']));
 header('Cache-Control: no-cache, must-revalidate');
 header('Pragma: public');

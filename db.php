@@ -28,7 +28,9 @@ class Database {
             $stmt->execute($params);
             return $stmt;
         } catch(PDOException $e) {
+            // Log the detailed error for administrators
             error_log("Database query error: " . $e->getMessage());
+            // Return a generic error to prevent information disclosure
             return false;
         }
     }

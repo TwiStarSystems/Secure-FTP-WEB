@@ -145,7 +145,7 @@ class Auth {
     
     // Check if logged in user is admin
     public function isAdmin() {
-        return isset($_SESSION['is_admin']) && $_SESSION['is_admin'] == true;
+        return isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true;
     }
     
     // Get current user data
@@ -182,7 +182,12 @@ class Auth {
     
     // Verify CSRF token
     public function verifyCSRFToken($token) {
-        return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+        if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $token)) {
+            return false;
+        }
+        // Rotate token after verification for security
+        unset($_SESSION['csrf_token']);
+        return true;
     }
 }
 ?>

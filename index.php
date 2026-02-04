@@ -43,13 +43,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Handle file deletion
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $result = $fileManager->deleteFile($_GET['id']);
-    if ($result['success']) {
-        header('Location: index.php?deleted=1');
-        exit;
-    } else {
-        $uploadMessage = ['type' => 'error', 'message' => $result['error']];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    // Verify CSRF token
+    if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
+        $uploadMessage = ['type' => 'error', 'message' => 'Invalid request.'];
+    } elseif (isset($_POST['file_id'])) {
+        $result = $fileManager->deleteFile($_POST['file_id']);
+        if ($result['success']) {
+            header('Location: index.php?deleted=1');
+            exit;
+        } else {
+            $uploadMessage = ['type' => 'error', 'message' => $result['error']];
+        }
     }
 }
 
@@ -385,10 +390,13 @@ $csrfToken = $auth->generateCSRFToken();
                                 <td><?php echo $file['download_count']; ?></td>
                                 <td class="actions">
                                     <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
-                                    <?php if ($currentUser && ($isAdmin || $file['uploaded_by_user'] == $currentUser['id'])): ?>
-                                        <a href="?action=delete&id=<?php echo $file['id']; ?>" 
-                                           class="btn btn-small btn-danger" 
-                                           onclick="return confirm('Are you sure you want to delete this file?')">Delete</a>
+                                    <?php if ($currentUser && ($isAdmin || $file['uploaded_by_user'] === $currentUser['id'])): ?>
+                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                                        </form>
                                     <?php endif; ?>
                                 </td>
                             </tr>

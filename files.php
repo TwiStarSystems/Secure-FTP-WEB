@@ -11,9 +11,9 @@ class FileManager {
         $this->db = $db;
         $this->auth = $auth;
         
-        // Create uploads directory if it doesn't exist
+        // Create uploads directory if it doesn't exist with secure permissions
         if (!file_exists(UPLOAD_DIR)) {
-            mkdir(UPLOAD_DIR, 0755, true);
+            mkdir(UPLOAD_DIR, 0750, true);
         }
     }
     
@@ -55,9 +55,14 @@ class FileManager {
             $hashAlgorithm = DEFAULT_HASH_ALGORITHM;
         }
         
-        // Generate unique filename
+        // Generate unique filename with cryptographically secure random
         $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $filename = uniqid() . '_' . time() . '.' . $extension;
+        // Validate extension is safe (alphanumeric only)
+        $extension = preg_replace('/[^a-zA-Z0-9]/', '', $extension);
+        if (strlen($extension) > 10) {
+            $extension = substr($extension, 0, 10);
+        }
+        $filename = bin2hex(random_bytes(16)) . '_' . time() . '.' . $extension;
         $filepath = UPLOAD_DIR . $filename;
         
         // Move uploaded file
@@ -158,10 +163,10 @@ class FileManager {
         
         $hasPermission = false;
         if ($user) {
-            if ($user['is_admin'] || $file['uploaded_by_user'] == $user['id']) {
+            if ($user['is_admin'] || $file['uploaded_by_user'] === $user['id']) {
                 $hasPermission = true;
             }
-        } elseif ($accessCode && $file['uploaded_by_code'] == $accessCode['id']) {
+        } elseif ($accessCode && $file['uploaded_by_code'] === $accessCode['id']) {
             $hasPermission = true;
         }
         
@@ -169,9 +174,14 @@ class FileManager {
             return ['success' => false, 'error' => 'Permission denied.'];
         }
         
+        // Validate filename to prevent path traversal
+        if (strpos($file['filename'], '..') !== false || strpos($file['filename'], '/') !== false || strpos($file['filename'], '\\') !== false) {
+            return ['success' => false, 'error' => 'Invalid filename.'];
+        }
+        
         $filepath = UPLOAD_DIR . $file['filename'];
         
-        if (!file_exists($filepath)) {
+        if (!file_exists($filepath) || !is_file($filepath)) {
             return ['success' => false, 'error' => 'File not found on disk.'];
         }
         
@@ -198,23 +208,28 @@ class FileManager {
         // Check permissions (only admin or file owner)
         $user = $this->auth->getCurrentUser();
         
-        if (!$user || (!$user['is_admin'] && $file['uploaded_by_user'] != $user['id'])) {
+        if (!$user || (!$user['is_admin'] && $file['uploaded_by_user'] !== $user['id'])) {
             return ['success' => false, 'error' => 'Permission denied.'];
+        }
+        
+        // Validate filename to prevent path traversal
+        if (strpos($file['filename'], '..') !== false || strpos($file['filename'], '/') !== false || strpos($file['filename'], '\\') !== false) {
+            return ['success' => false, 'error' => 'Invalid filename.'];
         }
         
         $filepath = UPLOAD_DIR . $file['filename'];
         
         // Delete file from disk
-        if (file_exists($filepath)) {
+        if (file_exists($filepath) && is_file($filepath)) {
             unlink($filepath);
         }
         
-        // Update quota
+        // Update quota (ensure it doesn't go below zero)
         if ($file['uploaded_by_user']) {
-            $sql = "UPDATE users SET used_quota = used_quota - ? WHERE id = ?";
+            $sql = "UPDATE users SET used_quota = GREATEST(0, used_quota - ?) WHERE id = ?";
             $this->db->query($sql, [$file['file_size'], $file['uploaded_by_user']]);
         } elseif ($file['uploaded_by_code']) {
-            $sql = "UPDATE access_codes SET used_quota = used_quota - ? WHERE id = ?";
+            $sql = "UPDATE access_codes SET used_quota = GREATEST(0, used_quota - ?) WHERE id = ?";
             $this->db->query($sql, [$file['file_size'], $file['uploaded_by_code']]);
         }
         

@@ -107,8 +107,12 @@ class UserManager {
         
         // Delete files from disk
         foreach ($files as $file) {
+            // Validate filename to prevent path traversal
+            if (strpos($file['filename'], '..') !== false || strpos($file['filename'], '/') !== false || strpos($file['filename'], '\\') !== false) {
+                continue;
+            }
             $filepath = UPLOAD_DIR . $file['filename'];
-            if (file_exists($filepath)) {
+            if (file_exists($filepath) && is_file($filepath)) {
                 unlink($filepath);
             }
         }
@@ -169,8 +173,12 @@ class UserManager {
         
         // Delete files from disk
         foreach ($files as $file) {
+            // Validate filename to prevent path traversal
+            if (strpos($file['filename'], '..') !== false || strpos($file['filename'], '/') !== false || strpos($file['filename'], '\\') !== false) {
+                continue;
+            }
             $filepath = UPLOAD_DIR . $file['filename'];
-            if (file_exists($filepath)) {
+            if (file_exists($filepath) && is_file($filepath)) {
                 unlink($filepath);
             }
         }
