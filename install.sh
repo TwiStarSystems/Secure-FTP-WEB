@@ -195,123 +195,115 @@ else
     # Full installation configuration
     print_header "STEP 1: Configuration"
 
+    # Get installation directory
+    print_step "Installation directory configuration"
+    # Get installation directory
+    print_step "Installation directory configuration"
+    APP_DIR=$(prompt_input "Enter application installation path" "/var/www/html/secure-ftp")
+
+    # Get domain/server name
+    print_step "Domain configuration"
+    echo ""
+    echo "Enter your domain name (e.g., example.com) or leave blank to use server IP."
+    echo "This will be used for Nginx configuration."
+    DOMAIN_NAME=$(prompt_input "Domain name" "")
+
+    if [ -z "$DOMAIN_NAME" ]; then
+        print_message "No domain specified. Using default configuration."
+        DOMAIN_NAME="_"
     else
-        print_message "Detected PHP version: $PHP_VERSION"
+        print_message "Domain set to: $DOMAIN_NAME"
     fi
-    
-else
-    # Full installation configuration
-    print_header "STEP 1: Configuration"
 
-# Get installation directory
-print_step "Installation directory configuration"
-APP_DIR=$(prompt_input "Enter application installation path" "/var/www/html/secure-ftp")
-
-# Get domain/server name
-print_step "Domain configuration"
-echo ""
-echo "Enter your domain name (e.g., example.com) or leave blank to use server IP."
-echo "This will be used for Nginx configuration."
-DOMAIN_NAME=$(prompt_input "Domain name" "")
-
-if [ -z "$DOMAIN_NAME" ]; then
-    print_message "No domain specified. Using default configuration."
-    DOMAIN_NAME="_"
-else
-    print_message "Domain set to: $DOMAIN_NAME"
-fi
-
-# Ask about SSL
-print_step "SSL/HTTPS configuration"
-echo ""
-echo "Do you want to set up SSL/HTTPS with Let's Encrypt?"
-echo "Note: You must have a valid domain name pointing to this server."
-if [ "$DOMAIN_NAME" = "_" ]; then
-    print_warning "SSL setup requires a domain name. Skipping SSL configuration."
-    SETUP_SSL=false
-else
-    if prompt_yes_no "Set up SSL/HTTPS now?" "n"; then
-        SETUP_SSL=true
-        print_message "SSL will be configured after installation."
-    else
+    # Ask about SSL
+    print_step "SSL/HTTPS configuration"
+    echo ""
+    echo "Do you want to set up SSL/HTTPS with Let's Encrypt?"
+    echo "Note: You must have a valid domain name pointing to this server."
+    if [ "$DOMAIN_NAME" = "_" ]; then
+        print_warning "SSL setup requires a domain name. Skipping SSL configuration."
         SETUP_SSL=false
-        print_message "SSL can be configured later manually."
+    else
+        if prompt_yes_no "Set up SSL/HTTPS now?" "n"; then
+            SETUP_SSL=true
+            print_message "SSL will be configured after installation."
+        else
+            SETUP_SSL=false
+            print_message "SSL can be configured later manually."
+        fi
+    fi
+
+    # Database configuration
+    print_step "Database configuration"
+    echo ""
+    DB_NAME=$(prompt_input "Database name" "secure_ftp")
+    DB_USER=$(prompt_input "Database user" "secure_ftp_user")
+
+    # Confirm settings
+    print_header "CONFIGURATION SUMMARY"
+    echo -e "${CYAN}Installation Settings:${NC}"
+    echo "  Application Path:    $APP_DIR"
+    echo "  Domain Name:         $DOMAIN_NAME"
+    echo "  SSL/HTTPS:           $([ "$SETUP_SSL" = true ] && echo 'Yes' || echo 'No')"
+    echo "  Database Name:       $DB_NAME"
+    echo "  Database User:       $DB_USER"
+    echo ""
+
+    if ! prompt_yes_no "Proceed with these settings?" "y"; then
+        print_error "Installation cancelled by user."
+        exit 0
     fi
 fi
 
-# Database configuration
-print_step "Database configuration"
-echo ""
-DB_NAME=$(prompt_input "Database name" "secure_ftp")
-DB_USER=$(prompt_input "Database user" "secure_ftp_user")
-
-# Confirm settings
-print_header "CONFIGURATION SUMMARY"
-echo -e "${CYAN}Installation Settings:${NC}"
-echo "  Application Path:    $APP_DIR"
-echo "  Domain Name:         $DOMAIN_NAME"
-echo "  SSL/HTTPS:           $([ "$SETUP_SSL" = true ] && echo 'Yes' || echo 'No')"
-echo "  Database Name:       $DB_NAME"
-echo "  Database User:       $DB_USER"
-echo ""
-
-if ! prompt_yes_no "Proceed with these settings?" "y"; then
-    print_error "Installation cancelled by user."
-    exit 0
-fi
-fi
-
 # Update system packages - skip in update mode unless packages needed
 if [ "$UPDATE_MODE" = false ]; then
-# Update system packages - skip in update mode unless packages needed
-if [ "$UPDATE_MODE" = false ]; then
-print_header "STEP 2: System Update"
-print_message "Updating system packages..."
-apt-get update
-apt-get upgrade -y
+    print_header "STEP 2: System Update"
+    print_message "Updating system packages..."
+    apt-get update
+    apt-get upgrade -y
 
-# Install Nginx
-print_header "STEP 3: Installing Web Server"
-print_message "Installing Nginx..."
-apt-get install -y nginx
+    # Install Nginx
+    print_header "STEP 3: Installing Web Server"
+    print_message "Installing Nginx..."
+    apt-get install -y nginx
 
-# Install PHP and required extensions
-print_header "STEP 4: Installing PHP"
-print_message "Installing PHP and required extensions..."
-apt-get install -y php-fpm php-mysql php-mbstring php-xml php-curl php-gd php-zip
+    # Install PHP and required extensions
+    print_header "STEP 4: Installing PHP"
+    print_message "Installing PHP and required extensions..."
+    apt-get install -y php-fpm php-mysql php-mbstring php-xml php-curl php-gd php-zip
 
-# Detect PHP version
-PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
-print_message "Detected PHP version: $PHP_VERSION"
+    # Detect PHP version
+    PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    print_message "Detected PHP version: $PHP_VERSION"
 
-# Install MySQL/MariaDB
-print_header "STEP 5: Installing Database Server"
-print_message "Installing MariaDB..."
-apt-get install -y mariadb-server mariadb-client
+    # Install MySQL/MariaDB and utilities
+    print_header "STEP 5: Installing Database Server and Utilities"
+    print_message "Installing MariaDB and required utilities..."
+    apt-get install -y mariadb-server mariadb-client openssl rsync
 
-# Start and enable services
-print_header "STEP 6: Starting Services"
-print_message "Starting and enabling services..."
-systemctl start mariadb
-systemctl enable mariadb
-systemctl start nginx
-systemctl enable nginx
-systemctl start php${PHP_VERSION}-fpm
-systemctl enable php${PHP_VERSION}-fpm
-print_message "All services started successfully"
+    # Start and enable services
+    print_header "STEP 6: Starting Services"
+    print_message "Starting and enabling services..."
+    systemctl start mariadb
+    systemctl enable mariadb
+    systemctl start nginx
+    systemctl enable nginx
+    systemctl start php${PHP_VERSION}-fpm
+    systemctl enable php${PHP_VERSION}-fpm
+    print_message "All services started successfully"
 
-# Generate secure database password
-print_header "STEP 7: Database Configuration"
-print_message "Generating secure database password..."
-DB_PASS=$(openssl rand -base64 32)
+    # Generate secure database password
+    print_header "STEP 7: Database Configuration"
+    print_message "Generating secure database password..."
+    DB_PASS=$(openssl rand -base64 32)
 
-# Configure MySQL
-print_message "Creating database and user..."
-mysql -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
-mysql -e "FLUSH PRIVILEGES;"
-print_message "Database configured successfully"
+    # Configure MySQL
+    print_message "Creating database and user..."
+    mysql -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+    mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
+    mysql -e "FLUSH PRIVILEGES;"
+    print_message "Database configured successfully"
 fi
 
 # Create application directory if it doesn't exist
@@ -380,78 +372,76 @@ print_message "Application files installed successfully"
 
 # Import database schema - skip in update mode
 if [ "$UPDATE_MODE" = false ]; then
-# Import database schema - skip in update mode
-if [ "$UPDATE_MODE" = false ]; then
-print_header "STEP 9: Database Schema Import"
-print_message "Importing database schema..."
-if [ -f "${APP_DIR}/database.sql" ]; then
-    mysql ${DB_NAME} < ${APP_DIR}/database.sql
-    print_message "Database schema imported successfully"
-else
-    print_error "database.sql not found in ${APP_DIR}"
-    exit 1
-fi
-
-# Configure application
-print_header "STEP 10: Application Configuration"
-print_message "Configuring application..."
-if [ -f "${APP_DIR}/config.php" ]; then
-    # Update database configuration
-    sed -i "s/define('DB_PASS', '.*');/define('DB_PASS', '${DB_PASS}');/" ${APP_DIR}/config.php
-    sed -i "s/define('DB_USER', '.*');/define('DB_USER', '${DB_USER}');/" ${APP_DIR}/config.php
-    sed -i "s/define('DB_NAME', '.*');/define('DB_NAME', '${DB_NAME}');/" ${APP_DIR}/config.php
-    print_message "Application configured successfully"
-else
-    print_error "config.php not found in ${APP_DIR}"
-    exit 1
-fi
-
-# Configure PHP for large file uploads
-print_header "STEP 11: PHP Configuration"
-print_message "Configuring PHP for large file uploads (10GB)..."
-PHP_INI="/etc/php/${PHP_VERSION}/fpm/php.ini"
-if [ -f "$PHP_INI" ]; then
-    cp "$PHP_INI" "${PHP_INI}.backup"
-    sed -i 's/upload_max_filesize = .*/upload_max_filesize = 10G/' "$PHP_INI"
-    sed -i 's/post_max_size = .*/post_max_size = 10G/' "$PHP_INI"
-    sed -i 's/max_execution_time = .*/max_execution_time = 300/' "$PHP_INI"
-    sed -i 's/max_input_time = .*/max_input_time = 300/' "$PHP_INI"
-    sed -i 's/memory_limit = .*/memory_limit = 512M/' "$PHP_INI"
-    print_message "PHP configuration updated successfully"
-fi
-
-# Copy Nginx configuration
-print_header "STEP 12: Nginx Configuration"
-print_message "Configuring Nginx..."
-if [ -f "${APP_DIR}/secure-ftp.conf" ]; then
-    cp ${APP_DIR}/secure-ftp.conf ${NGINX_CONF}
-    
-    # Update domain name in nginx config
-    if [ "$DOMAIN_NAME" != "_" ]; then
-        sed -i "s/server_name _;/server_name ${DOMAIN_NAME};/" ${NGINX_CONF}
-        print_message "Domain name set to: $DOMAIN_NAME"
+    print_header "STEP 9: Database Schema Import"
+    print_message "Importing database schema..."
+    if [ -f "${APP_DIR}/database.sql" ]; then
+        mysql ${DB_NAME} < ${APP_DIR}/database.sql
+        print_message "Database schema imported successfully"
+    else
+        print_error "database.sql not found in ${APP_DIR}"
+        exit 1
     fi
-    
-    # Update PHP-FPM socket path in nginx config
-    sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" ${NGINX_CONF}
-    
-    # Update application path in nginx config
-    sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" ${NGINX_CONF}
-    
-    # Enable the site
-    ln -sf ${NGINX_CONF} ${NGINX_ENABLED}
-    
-    # Disable default site if it exists
-    if [ -f /etc/nginx/sites-enabled/default ]; then
-        rm -f /etc/nginx/sites-enabled/default
-        print_message "Default site disabled"
+
+    # Configure application
+    print_header "STEP 10: Application Configuration"
+    print_message "Configuring application..."
+    if [ -f "${APP_DIR}/config.php" ]; then
+        # Update database configuration
+        sed -i "s/define('DB_PASS', '.*');/define('DB_PASS', '${DB_PASS}');/" ${APP_DIR}/config.php
+        sed -i "s/define('DB_USER', '.*');/define('DB_USER', '${DB_USER}');/" ${APP_DIR}/config.php
+        sed -i "s/define('DB_NAME', '.*');/define('DB_NAME', '${DB_NAME}');/" ${APP_DIR}/config.php
+        print_message "Application configured successfully"
+    else
+        print_error "config.php not found in ${APP_DIR}"
+        exit 1
     fi
-    
-    print_message "Nginx configuration installed successfully"
-else
-    print_error "secure-ftp.conf not found in ${APP_DIR}"
-    exit 1
-fi
+
+    # Configure PHP for large file uploads
+    print_header "STEP 11: PHP Configuration"
+    print_message "Configuring PHP for large file uploads (10GB)..."
+    PHP_INI="/etc/php/${PHP_VERSION}/fpm/php.ini"
+    if [ -f "$PHP_INI" ]; then
+        cp "$PHP_INI" "${PHP_INI}.backup"
+        sed -i 's/upload_max_filesize = .*/upload_max_filesize = 10G/' "$PHP_INI"
+        sed -i 's/post_max_size = .*/post_max_size = 10G/' "$PHP_INI"
+        sed -i 's/max_execution_time = .*/max_execution_time = 300/' "$PHP_INI"
+        sed -i 's/max_input_time = .*/max_input_time = 300/' "$PHP_INI"
+        sed -i 's/memory_limit = .*/memory_limit = 512M/' "$PHP_INI"
+        print_message "PHP configuration updated successfully"
+    fi
+
+    # Copy Nginx configuration
+    print_header "STEP 12: Nginx Configuration"
+    print_message "Configuring Nginx..."
+    if [ -f "${APP_DIR}/secure-ftp.conf" ]; then
+        cp ${APP_DIR}/secure-ftp.conf ${NGINX_CONF}
+        
+        # Update domain name in nginx config
+        if [ "$DOMAIN_NAME" != "_" ]; then
+            sed -i "s/server_name _;/server_name ${DOMAIN_NAME};/" ${NGINX_CONF}
+            print_message "Domain name set to: $DOMAIN_NAME"
+        fi
+        
+        # Update PHP-FPM socket path in nginx config
+        sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" ${NGINX_CONF}
+        
+        # Update application path in nginx config
+        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" ${NGINX_CONF}
+        
+        # Enable the site
+        ln -sf ${NGINX_CONF} ${NGINX_ENABLED}
+        
+        # Disable default site if it exists
+        if [ -f /etc/nginx/sites-enabled/default ]; then
+            rm -f /etc/nginx/sites-enabled/default
+            print_message "Default site disabled"
+        fi
+        
+        print_message "Nginx configuration installed successfully"
+    else
+        print_error "secure-ftp.conf not found in ${APP_DIR}"
+        exit 1
+    fi
 else
     # Update mode - only update PHP configuration if needed
     print_header "UPDATE: PHP Configuration Check"
@@ -585,28 +575,14 @@ fi
 
 # Create admin user
 print_header "STEP 15: Admin User Creation"
-print_message "Creating admin user account..."
+print_message "Creating default admin user account..."
+print_warning "Using default credentials - admin/admin"
+print_warning "Please change the password after first login!"
 echo ""
-ADMIN_USER=$(prompt_input "Enter admin username" "admin")
 
-while true; do
-    read -s -p "Enter admin password: " ADMIN_PASS
-    echo ""
-    read -s -p "Confirm admin password: " ADMIN_PASS_CONFIRM
-    echo ""
-    
-    if [ "$ADMIN_PASS" = "$ADMIN_PASS_CONFIRM" ]; then
-        if [ ${#ADMIN_PASS} -lt 8 ]; then
-            print_warning "Password should be at least 8 characters long."
-            if ! prompt_yes_no "Continue with this password anyway?" "n"; then
-                continue
-            fi
-        fi
-        break
-    else
-        print_error "Passwords do not match. Please try again."
-    fi
-done
+# Set default credentials
+ADMIN_USER="admin"
+ADMIN_PASS="admin"
 
 # Hash password using PHP
 ADMIN_PASS_HASH=$(php -r "echo password_hash('${ADMIN_PASS}', PASSWORD_BCRYPT);")
