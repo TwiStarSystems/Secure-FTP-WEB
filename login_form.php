@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Login</title>
-    <style>
+    <link rel="stylesheet" href="style.css">
         * {
             margin: 0;
             padding: 0;
@@ -134,9 +134,6 @@
         .alert-success {
             background: #efe;
             color: #3c3;
-            border: 1px solid #cfc;
-        }
-    </style>
 </head>
 <body>
     <div class="login-container">

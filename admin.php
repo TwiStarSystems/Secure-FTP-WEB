@@ -88,7 +88,7 @@ $csrfToken = $auth->generateCSRFToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Admin Panel</title>
-    <style>
+    <link rel="stylesheet" href="style.css">
         * {
             margin: 0;
             padding: 0;
@@ -277,9 +277,6 @@ $csrfToken = $auth->generateCSRFToken();
             background: #f8f9fa;
             padding: 8px;
             border-radius: 5px;
-            display: inline-block;
-        }
-    </style>
 </head>
 <body>
     <div class="header">

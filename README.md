@@ -4,6 +4,12 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 
 ## Features
 
+### 🎨 Modern User Interface
+- **Professional Design**: Custom-branded TwiStar Systems color scheme
+- **Responsive Layout**: Works seamlessly on desktop, tablet, and mobile devices
+- **Dark Theme**: Easy on the eyes with a modern dark interface
+- **Smooth Animations**: Polished user experience with subtle transitions
+
 ### 🔐 Authentication & Access Control
 - **Admin Login**: Full administrative control with user management capabilities
 - **User Management**: Create regular and temporary users with auto-deletion on expiry dates
@@ -32,12 +38,15 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 ## Installation
 
 ### Requirements
-- PHP 7.4 or higher
-- MySQL 5.7 or higher
-- Apache/Nginx web server
-- PHP extensions: PDO, PDO_MySQL, fileinfo, openssl
+- **Operating System**: Debian 10+ or Ubuntu 20.04+ (primary support)
+- **Web Server**: Nginx 1.18+ (configured automatically by installer)
+- **PHP**: 7.4 or higher with extensions: PDO, PDO_MySQL, fileinfo, openssl, mbstring, curl, gd, zip
+- **Database**: MariaDB 10.3+ or MySQL 5.7+
+- **Server**: Root/sudo access required for installation
 
-### Quick Start
+### Quick Installation (Recommended)
+
+The easiest way to install is using the automated installation wizard:
 
 1. **Clone the repository**
    ```bash
@@ -45,46 +54,45 @@ A secure, web-based file transfer system built with PHP that provides enterprise
    cd Secure-FTP-WEB
    ```
 
-2. **Configure the database**
-   - Create a MySQL database named `secure_ftp`
-   - Import the database schema:
-     ```bash
-     mysql -u root -p secure_ftp < database.sql
-     ```
-
-3. **Configure the application**
-   - Edit `config.php` and update the database credentials:
-     ```php
-     define('DB_HOST', 'localhost');
-     define('DB_NAME', 'secure_ftp');
-     define('DB_USER', 'your_username');
-     define('DB_PASS', 'your_password');
-     ```
-
-4. **Set up file permissions**
+2. **Run the installation wizard**
    ```bash
-   chmod 755 uploads
-   chown www-data:www-data uploads  # For Apache on Ubuntu/Debian
+   sudo ./install.sh
    ```
 
-5. **Configure PHP settings**
-   - Edit your `php.ini` file to support large file uploads:
-     ```ini
-     upload_max_filesize = 10240M
-     post_max_size = 10240M
-     max_execution_time = 300
-     max_input_time = 300
-     memory_limit = 512M
-     ```
+3. **Follow the interactive prompts**
+   
+   The installer will guide you through:
+   - Choosing the installation directory
+   - Configuring your domain name
+   - Setting up SSL/HTTPS (optional)
+   - Database configuration
+   - Creating an admin account
+   
+4. **Access your application**
+   
+   After installation completes, you'll receive:
+   - Your application URL
+   - Admin login credentials
+   - Database credentials (saved to `installation_credentials.txt`)
 
-6. **Access the application**
-   - Navigate to `http://your-domain.com/login.php`
-   - Default admin credentials:
-     - Username: `admin`
-     - Password: `admin123`
-   - **⚠️ IMPORTANT**: Change the admin password immediately after first login!
+### What the Installer Does
 
-For detailed installation instructions, see [INSTALL.md](INSTALL.md).
+The automated installer will:
+- ✅ Install and configure Nginx web server
+- ✅ Install PHP-FPM with all required extensions
+- ✅ Install and configure MariaDB database
+- ✅ Create and configure the database
+- ✅ Deploy application files
+- ✅ Set proper file permissions
+- ✅ Configure PHP for large file uploads (10GB)
+- ✅ Create your admin user account
+- ✅ Optionally set up SSL with Let's Encrypt
+
+**Installation time**: ~5-10 minutes (depending on server speed and options selected)
+
+### Manual Installation
+
+For manual installation or other operating systems, see the detailed instructions in [INSTALL.md](INSTALL.md).
 
 ## Usage
 
@@ -176,9 +184,45 @@ Secure-FTP-WEB/
 ├── login_form.php      # Login form template
 ├── users.php           # User management functions
 ├── uploads/            # Uploaded files directory
+├── install.sh          # Automated installation script
+├── secure-ftp.conf     # Nginx configuration file
 ├── INSTALL.md          # Detailed installation guide
+├── SECURITY.md         # Security guidelines
 └── README.md           # This file
 ```
+
+## Post-Installation
+
+### First Login
+1. Navigate to your application URL (provided at the end of installation)
+2. Login with the admin credentials you created during installation
+3. **Important**: Consider changing your admin password in the admin panel
+
+### Recommended Next Steps
+1. **Configure SSL/HTTPS** (if not done during installation)
+   ```bash
+   sudo apt install certbot python3-certbot-nginx
+   sudo certbot --nginx -d your-domain.com
+   ```
+
+2. **Set up firewall**
+   ```bash
+   sudo ufw allow 22/tcp    # SSH
+   sudo ufw allow 80/tcp    # HTTP
+   sudo ufw allow 443/tcp   # HTTPS
+   sudo ufw enable
+   ```
+
+3. **Configure regular backups**
+   ```bash
+   # Backup database
+   mysqldump -u secure_ftp_user -p secure_ftp > backup.sql
+   
+   # Backup uploads directory
+   tar -czf uploads_backup.tar.gz /var/www/html/secure-ftp/uploads
+   ```
+
+4. **Review security settings** in `SECURITY.md`
 
 ## License
 

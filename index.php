@@ -85,7 +85,7 @@ $csrfToken = $auth->generateCSRFToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Dashboard</title>
-    <style>
+    <link rel="stylesheet" href="style.css">
         * {
             margin: 0;
             padding: 0;
@@ -285,10 +285,6 @@ $csrfToken = $auth->generateCSRFToken();
             padding: 10px;
             border-radius: 5px;
             margin-top: 10px;
-            font-family: monospace;
-            font-size: 12px;
-        }
-    </style>
 </head>
 <body>
     <div class="header">
