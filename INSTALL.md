@@ -2,6 +2,42 @@
 
 This guide will walk you through the complete installation process for the Secure File Transfer Web Application.
 
+## Quick Installation (Recommended for Debian/Ubuntu)
+
+### Automated Installation with install.sh
+
+For a quick and easy setup on Debian/Ubuntu systems, use the automated installation script:
+
+```bash
+# Clone the repository
+git clone https://github.com/TwiStarSystems/Secure-FTP-WEB.git
+cd Secure-FTP-WEB
+
+# Run the installation script
+sudo ./install.sh
+```
+
+The script will automatically:
+- Install Nginx, PHP, and MariaDB
+- Configure all services
+- Import the database schema
+- Set up proper file permissions
+- Create an admin user
+- Generate secure database credentials
+
+After installation, the script will display:
+- Application access URL
+- Admin credentials
+- Database credentials (saved to `installation_credentials.txt`)
+
+**Important:** Save the credentials and delete `installation_credentials.txt` after noting them.
+
+---
+
+## Manual Installation
+
+If you prefer manual installation or are using a different Linux distribution, follow these steps:
+
 ## Prerequisites
 
 Before beginning installation, ensure you have:
@@ -28,6 +64,20 @@ sudo apt upgrade -y
 ```
 
 #### Install Required Software (Ubuntu/Debian)
+
+**For Nginx (Recommended):**
+```bash
+# Install Nginx
+sudo apt install nginx -y
+
+# Install PHP-FPM and required extensions
+sudo apt install php-fpm php-mysql php-mbstring php-xml php-curl php-gd php-zip -y
+
+# Install MariaDB
+sudo apt install mariadb-server mariadb-client -y
+```
+
+**For Apache:**
 ```bash
 # Install Apache
 sudo apt install apache2 -y
@@ -190,40 +240,114 @@ sudo systemctl restart apache2
 
 #### For Nginx:
 
-Create a server block:
+**Note:** A ready-to-use Nginx configuration file (`secure-ftp.conf`) is included in the repository.
+
+Copy and enable the configuration:
 ```bash
-sudo nano /etc/nginx/sites-available/secure-ftp
+# Copy the provided configuration file
+sudo cp secure-ftp.conf /etc/nginx/sites-available/secure-ftp.conf
+
+# Update PHP version in config if needed (e.g., for PHP 8.1)
+sudo sed -i 's/php-fpm.sock/php8.1-fpm.sock/g' /etc/nginx/sites-available/secure-ftp.conf
+
+# Enable the site
+sudo ln -s /etc/nginx/sites-available/secure-ftp.conf /etc/nginx/sites-enabled/
+
+# Disable default site (optional)
+sudo rm /etc/nginx/sites-enabled/default
+
+# Test Nginx configuration
+sudo nginx -t
+
+# Restart Nginx
+sudo systemctl restart nginx
 ```
 
-Add the following:
+Or create manually:
+```bash
+sudo nano /etc/nginx/sites-available/secure-ftp.conf
+```
+
+Add the following (this matches the included `secure-ftp.conf` file):
 ```nginx
 server {
     listen 80;
-    server_name your-domain.com;
+    listen [::]:80;
+    
+    server_name _;  # Replace with your domain name
+    
     root /var/www/html/secure-ftp;
-    index index.php;
+    index index.php index.html;
     
-    client_max_body_size 10240M;
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
     
+    # Max upload size (10GB to match app config)
+    client_max_body_size 10G;
+    
+    # Timeouts for large file uploads
+    client_body_timeout 300s;
+    client_header_timeout 300s;
+    
+    # Main location block
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
     
+    # PHP processing
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;  # Adjust PHP version if needed
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
+        
+        # Increase timeouts for large file uploads
+        fastcgi_read_timeout 300s;
+        fastcgi_send_timeout 300s;
     }
     
-    location /uploads/ {
-        deny all;
-        return 404;
-    }
-    
+    # Protect sensitive files
     location ~ /\. {
         deny all;
+        access_log off;
+        log_not_found off;
     }
+    
+    location ~* \.(sql|md)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+    
+    # Prevent access to database.sql
+    location = /database.sql {
+        deny all;
+    }
+    
+    # Prevent access to config.php directly
+    location = /config.php {
+        deny all;
+    }
+    
+    # Allow uploads directory (but not direct script execution)
+    location /uploads {
+        location ~ \.php$ {
+            deny all;
+        }
+    }
+    
+    # Static file caching
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Logging
+    access_log /var/log/nginx/secure-ftp-access.log;
+    error_log /var/log/nginx/secure-ftp-error.log;
 }
 ```
 
@@ -239,17 +363,27 @@ sudo systemctl restart php7.4-fpm
 
 Using Let's Encrypt (free SSL certificate):
 
+**For Nginx:**
+```bash
+# Install Certbot
+sudo apt install certbot python3-certbot-nginx -y
+
+# Obtain and install certificate
+sudo certbot --nginx -d your-domain.com
+
+# Certbot will automatically update the Nginx configuration
+```
+
+**For Apache:**
 ```bash
 # Install Certbot
 sudo apt install certbot python3-certbot-apache -y
-# For Nginx: sudo apt install certbot python3-certbot-nginx -y
 
 # Obtain and install certificate
 sudo certbot --apache -d your-domain.com
-# For Nginx: sudo certbot --nginx -d your-domain.com
 ```
 
-Follow the prompts to complete SSL setup.
+Follow the prompts to complete SSL setup. Certbot will automatically renew certificates.
 
 ### 10. Configure Firewall
 

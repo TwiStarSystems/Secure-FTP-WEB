@@ -25,6 +25,14 @@ define('DEFAULT_HASH_ALGORITHM', 'sha256');
 // Timezone
 date_default_timezone_set('UTC');
 
-// Start session
-session_start();
+// Session configuration for security and Nginx compatibility
+ini_set('session.cookie_httponly', 1);  // Prevent JavaScript access to session cookies
+ini_set('session.use_only_cookies', 1); // Only use cookies for session management
+ini_set('session.cookie_secure', 0);    // Set to 1 if using HTTPS
+ini_set('session.cookie_samesite', 'Strict'); // CSRF protection
+
+// Start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 ?>
