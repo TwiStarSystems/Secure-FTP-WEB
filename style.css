@@ -58,8 +58,8 @@
 
 /* Reset and Base Styles */
 * {
-  margin: 0;
-  padding: 0;
+  margin: 5px;
+  padding: 3px;
   box-sizing: border-box;
 }
 
@@ -682,6 +682,215 @@ input[type="file"]:hover {
 .badge-info {
   background: var(--color-accent);
   color: white;
+}
+
+/* Common Page Styles - Shared across all pages */
+/* These styles override the themed styles above for consistency */
+
+/* Header variations for different pages */
+.header-content.admin-header {
+  max-width: 1400px;
+}
+
+/* Navigation links */
+.nav-links {
+  display: flex;
+  gap: 15px;
+}
+
+.nav-link {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 5px;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* Container variations */
+.container.admin-container {
+  max-width: 1400px;
+}
+
+/* Quota display */
+.quota-info {
+  margin-bottom: 10px;
+}
+
+.quota-bar {
+  background: #e0e0e0;
+  height: 20px;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.quota-bar-fill {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  transition: width 0.3s;
+}
+
+/* Upload form */
+.upload-form {
+  display: grid;
+  gap: 15px;
+}
+
+/* Form grid layout */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+/* Checkbox groups */
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: auto;
+}
+
+/* File hash display */
+.file-hash {
+  font-family: monospace;
+  font-size: 12px;
+  color: #666;
+  word-break: break-all;
+}
+
+/* Actions container */
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Admin link in header */
+.admin-link {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 5px;
+  text-decoration: none;
+  margin-right: 10px;
+}
+
+.admin-link:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* Hash info display */
+.hash-info {
+  background: #f8f9fa;
+  padding: 10px;
+  border-radius: 5px;
+  margin-top: 10px;
+}
+
+/* Code display */
+.code-display {
+  font-family: monospace;
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 5px;
+}
+
+/* Badge variations */
+.badge-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+/* Login page specific styles */
+.login-container.white-bg {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  width: 100%;
+  max-width: 400px;
+  padding: 40px;
+}
+
+.login-container.white-bg .logo h1 {
+  color: #667eea;
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+
+.login-container.white-bg .logo p {
+  color: #666;
+  font-size: 14px;
+}
+
+.login-container.white-bg .tab {
+  color: #666;
+  border-bottom: 2px solid transparent;
+}
+
+.login-container.white-bg .tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+.login-container.white-bg label {
+  color: #333;
+}
+
+.login-container.white-bg input[type="text"],
+.login-container.white-bg input[type="password"] {
+  border: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.login-container.white-bg input:focus {
+  border-color: #667eea;
+}
+
+.login-container.white-bg .btn:hover {
+  transform: translateY(-2px);
+}
+
+.login-container.white-bg .alert-error {
+  background: #fee;
+  color: #c33;
+  border: 1px solid #fcc;
+}
+
+.login-container.white-bg .alert-success {
+  background: #efe;
+  color: #3c3;
+}
+
+/* Body variant for centered layout (login page) */
+body.login-page {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* Header variant for simple pages */
+.header.simple-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+/* Container variant for simple pages */
+body.simple-page {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: #f5f5f5;
 }
 
 /* Print Styles */
