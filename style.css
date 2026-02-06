@@ -254,7 +254,7 @@ input::placeholder {
 /* Dashboard Container */
 .dashboard-container {
   max-width: 1200px;
-  margin: 0 auto;
+  margin: 0;
   padding: var(--spacing-lg);
 }
 
@@ -746,7 +746,7 @@ input[type="file"]:hover {
   width: 40px;
   height: 40px;
   animation: spin 1s linear infinite;
-  margin: var(--spacing-lg) auto;
+  margin: var(--spacing-lg);
 }
 
 @keyframes spin {
@@ -819,7 +819,7 @@ input[type="file"]:hover {
 /* Container variations */
 .container {
   max-width: 1200px;
-  margin: var(--spacing-lg) auto;
+  margin: var(--spacing-lg);
   padding: 0 var(--spacing-md);
 }
 
@@ -1062,7 +1062,7 @@ body.simple-page {
 .public-page .page-intro p {
   color: var(--color-muted);
   max-width: 600px;
-  margin: 0 auto;
+  margin: 0;
 }
 
 /* Files Grid for Public Page */
