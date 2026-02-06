@@ -82,12 +82,11 @@ body {
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
   padding: var(--spacing-xl);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   justify-content: center;
 }
 
@@ -741,8 +740,6 @@ input[type="file"]:hover {
 }
 
 /* Common Page Styles - Shared across all pages */
-/* These styles override the themed styles above for consistency */
-
 /* Header variations for different pages */
 .header-content.admin-header {
   max-width: 1400px;
@@ -751,62 +748,54 @@ input[type="file"]:hover {
 /* Navigation links */
 .nav-links {
   display: flex;
-  gap: 15px;
+  gap: var(--spacing-sm);
 }
 
 .nav-link {
-  background: rgba(255,255,255,0.2);
-  color: white;
-  padding: 8px 16px;
+  background: rgba(150, 0, 225, 0.2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
   text-decoration: none;
+  transition: all 0.3s ease;
 }
 
 .nav-link:hover {
-  background: rgba(255,255,255,0.3);
+  background: rgba(150, 0, 225, 0.35);
+  border-color: var(--color-primary);
 }
 
 /* Container variations */
+.container {
+  max-width: 1200px;
+  margin: var(--spacing-lg) auto;
+  padding: 0 var(--spacing-md);
+}
+
 .container.admin-container {
   max-width: 1400px;
-}
-
-/* Quota display */
-.quota-info {
-  margin-bottom: 10px;
-}
-
-.quota-bar {
-  background: #e0e0e0;
-  height: 20px;
-  overflow: hidden;
-  margin: 10px 0;
-}
-
-.quota-bar-fill {
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-  height: 100%;
-  transition: width 0.3s;
 }
 
 /* Upload form */
 .upload-form {
   display: grid;
-  gap: 15px;
+  gap: var(--spacing-md);
 }
 
 /* Form grid layout */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 15px;
-  margin-bottom: 15px;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
 }
 
 /* Checkbox groups */
 .checkbox-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--spacing-sm);
 }
 
 .checkbox-group input[type="checkbox"] {
@@ -815,131 +804,95 @@ input[type="file"]:hover {
 
 /* File hash display */
 .file-hash {
-  font-family: monospace;
-  font-size: 12px;
-  color: #666;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--color-secondary);
   word-break: break-all;
 }
 
 /* Actions container */
 .actions {
   display: flex;
-  gap: 10px;
+  gap: var(--spacing-sm);
 }
 
 /* Admin link in header */
 .admin-link {
-  background: rgba(255,255,255,0.2);
-  color: white;
-  padding: 8px 16px;
+  background: rgba(150, 0, 225, 0.2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
   text-decoration: none;
-  margin-right: 10px;
+  transition: all 0.3s ease;
 }
 
 .admin-link:hover {
-  background: rgba(255,255,255,0.3);
+  background: rgba(150, 0, 225, 0.35);
+  border-color: var(--color-primary);
 }
 
 /* Hash info display */
 .hash-info {
-  background: #f8f9fa;
-  padding: 10px;
-  margin-top: 10px;
+  background: rgba(0, 0, 48, 0.5);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  margin-top: var(--spacing-sm);
+  color: var(--color-text);
 }
 
 /* Code display */
 .code-display {
-  font-family: monospace;
-  background: #f8f9fa;
-  padding: 8px;
+  font-family: 'Courier New', monospace;
+  background: rgba(0, 0, 48, 0.5);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  color: var(--color-secondary);
 }
 
-/* Badge variations */
-.badge-warning {
-  background: #fff3cd;
-  color: #856404;
-}
-
-/* Login page specific styles */
+/* Login page specific styles - Dark mode consistent */
 .login-container.white-bg {
-  background: white;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  /* Use same dark styling as default login-container */
+  background: rgba(0, 0, 48, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 400px;
-  padding: 40px;
-}
-
-.login-container.white-bg .logo h1 {
-  color: #667eea;
-  font-size: 28px;
-  margin-bottom: 10px;
-}
-
-.login-container.white-bg .logo p {
-  color: #666;
-  font-size: 14px;
-}
-
-.login-container.white-bg .tab {
-  color: #666;
-  border-bottom: 2px solid transparent;
-}
-
-.login-container.white-bg .tab.active {
-  color: #667eea;
-  border-bottom-color: #667eea;
-}
-
-.login-container.white-bg label {
-  color: #333;
-}
-
-.login-container.white-bg input[type="text"],
-.login-container.white-bg input[type="password"] {
-  border: 1px solid #ddd;
-  font-size: 14px;
-}
-
-.login-container.white-bg input:focus {
-  border-color: #667eea;
-}
-
-.login-container.white-bg .btn:hover {
-  transform: translateY(-2px);
-}
-
-.login-container.white-bg .alert-error {
-  background: #fee;
-  color: #c33;
-  border: 1px solid #fcc;
-}
-
-.login-container.white-bg .alert-success {
-  background: #efe;
-  color: #3c3;
+  max-width: 500px;
+  padding: var(--spacing-xl);
 }
 
 /* Body variant for centered layout (login page) */
 body.login-page {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--color-dark);
+  background-image: var(--gradient-secondary);
+  background-attachment: fixed;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: var(--spacing-md);
 }
 
 /* Header variant for simple pages */
 .header.simple-gradient {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  /* Use consistent dark theme */
+  background: rgba(0, 0, 48, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-md);
 }
 
 /* Container variant for simple pages */
 body.simple-page {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  /* Inherit dark theme from body */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
 }
 
 /* Settings Page Styles */
