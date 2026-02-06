@@ -49,12 +49,45 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 
 ## Installation
 
-### Requirements
-- **Operating System**: Debian 10+ or Ubuntu 20.04+ (primary support)
-- **Web Server**: Nginx 1.18+ (configured automatically by installer)
-- **PHP**: 7.4 or higher with extensions: PDO, PDO_MySQL, fileinfo, openssl, mbstring, curl, gd, zip
-- **Database**: MariaDB 10.3+ or MySQL 5.7+
-- **Server**: Root/sudo access required for installation
+### Software Requirements
+
+#### Operating System
+- **Debian**: 10 (Buster) or higher
+- **Ubuntu**: 20.04 LTS or higher
+- **Other Linux**: May work but not officially supported
+
+#### Web Server
+- **Nginx**: 1.18+ (automatically installed and configured)
+- Support for large file uploads (10GB+)
+- FastCGI processing capability
+
+#### PHP Requirements
+- **Version**: PHP 7.4 or higher (PHP 8.0+ recommended)
+- **Required Extensions**:
+  - `php-fpm` - FastCGI Process Manager
+  - `php-mysql` or `php-pdo` - Database connectivity
+  - `php-mbstring` - Multi-byte string handling
+  - `php-xml` - XML processing
+  - `php-curl` - HTTP requests
+  - `php-gd` - Image processing
+  - `php-zip` - ZIP file handling
+  - `php-fileinfo` - File type detection
+  - `php-openssl` - Encryption and hashing
+
+#### Database
+- **MariaDB**: 10.3 or higher (recommended)
+- **MySQL**: 5.7 or higher
+- Minimum 100MB storage (scales with uploaded files database)
+
+#### Server Resources
+- **Memory**: Minimum 512MB RAM (1GB+ recommended)
+- **Storage**: Minimum 1GB free space (scales with file uploads)
+- **Permissions**: Root or sudo access required for installation
+
+#### Network
+- Ports 80 (HTTP) and/or 443 (HTTPS) accessible
+- Domain name (optional, but recommended for SSL)
+- Static IP or DDNS if self-hosting
 
 ### Quick Installation (Recommended)
 
@@ -89,16 +122,68 @@ The easiest way to install is using the automated installation wizard:
 
 ### What the Installer Does
 
-The automated installer will:
-- ✅ Install and configure Nginx web server
-- ✅ Install PHP-FPM with all required extensions
-- ✅ Install and configure MariaDB database
-- ✅ Create and configure the database
-- ✅ Deploy application files
-- ✅ Set proper file permissions
-- ✅ Configure PHP for large file uploads (10GB)
-- ✅ Create your admin user account
-- ✅ Optionally set up SSL with Let's Encrypt
+The automated installer (`install.sh`) performs a complete system setup:
+
+#### 1. System Preparation
+- ✅ Checks for root/sudo privileges
+- ✅ Validates OS compatibility (Debian/Ubuntu)
+- ✅ Updates system package repositories
+- ✅ Installs system dependencies
+
+#### 2. Web Server Setup
+- ✅ Installs Nginx web server (latest stable version)
+- ✅ Configures virtual host for the application
+- ✅ Sets up FastCGI parameters for PHP
+- ✅ Configures large file upload support (10GB limit)
+- ✅ Enables gzip compression for better performance
+- ✅ Optionally configures SSL/HTTPS with Let's Encrypt
+
+#### 3. PHP Installation & Configuration
+- ✅ Installs PHP-FPM with all required extensions
+- ✅ Configures PHP settings for large file uploads:
+  - `upload_max_filesize = 10G`
+  - `post_max_size = 10G`
+  - `max_execution_time = 3600`
+  - `memory_limit = 512M`
+- ✅ Optimizes PHP-FPM pool settings
+- ✅ Enables necessary PHP extensions
+
+#### 4. Database Setup
+- ✅ Installs MariaDB/MySQL database server
+- ✅ Secures database installation
+- ✅ Creates dedicated database and user
+- ✅ Imports database schema from `database.sql`
+- ✅ Sets proper privileges and permissions
+- ✅ Tests database connectivity
+
+#### 5. Application Deployment
+- ✅ Copies application files to installation directory
+- ✅ Creates uploads directory with secure permissions
+- ✅ Generates and configures `config.php` with your settings
+- ✅ Sets ownership to `www-data` user
+- ✅ Applies secure file permissions (644 for files, 755 for directories)
+- ✅ Protects uploads directory from direct web access
+
+#### 6. Admin Account Creation
+- ✅ Prompts for admin username and password
+- ✅ Hashes password with bcrypt
+- ✅ Creates initial admin user in database
+- ✅ Assigns admin role and permissions
+
+#### 7. Final Configuration
+- ✅ Restarts Nginx and PHP-FPM services
+- ✅ Validates all services are running
+- ✅ Tests application accessibility
+- ✅ Generates installation credentials file
+- ✅ Displays access URL and credentials
+
+#### Update Mode
+The installer also supports update mode (`./install.sh --update`):
+- Updates application files while preserving:
+  - Database and all existing data
+  - Uploaded files
+  - Configuration settings
+  - User accounts and permissions
 
 **Installation time**: ~5-10 minutes (depending on server speed and options selected)
 
@@ -260,9 +345,15 @@ Secure-FTP-WEB/
 
 4. **Review security settings** in `SECURITY.md`
 
-## License
+## Proprietary Notice
 
-MIT License - see LICENSE file for details
+This repository contains proprietary software owned by TwiStarSystems. All rights are reserved.
+
+**Access and usage are strictly restricted.** Unauthorized copying, modification, distribution, or commercial use is prohibited.
+
+Please refer to the [LICENSE](LICENSE) file for complete terms and conditions.
+
+For licensing inquiries, contact: legal@twistarsystems.com
 
 ## Security Disclosure
 
