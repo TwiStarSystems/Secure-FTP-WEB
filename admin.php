@@ -91,15 +91,7 @@ $csrfToken = $auth->generateCSRFToken();
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="simple-page">
-    <div class="header simple-gradient">
-        <div class="header-content admin-header">
-            <h1>🔐 Admin Panel</h1>
-            <div class="nav-links">
-                <a href="index.php" class="nav-link">← Back to Dashboard</a>
-                <a href="?action=logout" class="nav-link">Logout</a>
-            </div>
-        </div>
-    </div>
+    <?php include 'header.php'; ?>
     
     <div class="container admin-container">
         <?php if ($message): ?>

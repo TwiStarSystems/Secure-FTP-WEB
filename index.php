@@ -88,21 +88,7 @@ $csrfToken = $auth->generateCSRFToken();
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="simple-page">
-    <div class="header simple-gradient">
-        <div class="header-content">
-            <h1>🔒 <?php echo SITE_NAME; ?></h1>
-            <div class="header-right">
-                <?php if ($isAdmin): ?>
-                    <a href="admin.php" class="admin-link">Admin Panel</a>
-                <?php endif; ?>
-                <div class="user-info">
-                    <div><strong><?php echo $currentUser ? htmlspecialchars($currentUser['username']) : 'Access Code User'; ?></strong></div>
-                    <small><?php echo $isAdmin ? 'Administrator' : 'User'; ?></small>
-                </div>
-                <a href="?action=logout" class="btn-logout">Logout</a>
-            </div>
-        </div>
-    </div>
+    <?php include 'header.php'; ?>
     
     <div class="container">
         <?php if (isset($_GET['deleted'])): ?>
