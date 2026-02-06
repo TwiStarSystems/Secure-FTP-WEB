@@ -210,5 +210,7 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
             <a href="index.php">Back to Home</a>
         </div>
     </div>
+    
+    <?php include 'footer.php'; ?>
 </body>
 </html>

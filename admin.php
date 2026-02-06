@@ -306,5 +306,7 @@ $csrfToken = $auth->generateCSRFToken();
             expiryGroup.style.display = checkbox.checked ? 'flex' : 'none';
         }
     </script>
+    
+    <?php include 'footer.php'; ?>
 </body>
 </html>

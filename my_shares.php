@@ -273,5 +273,7 @@ $csrfToken = $auth->generateCSRFToken();
             setTimeout(() => btn.textContent = 'Copy', 2000);
         }
     </script>
+    
+    <?php include 'footer.php'; ?>
 </body>
 </html>

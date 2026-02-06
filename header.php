@@ -35,13 +35,14 @@ $headerIsAdmin = RBAC::isAdmin();
                 <?php endif; ?>
                 
                 <div class="user-info">
-                    <strong><?php echo isset($currentUser) && $currentUser ? htmlspecialchars($currentUser['username']) : 'Access Code User'; ?></strong>
-                    <small><?php echo RBAC::getRoleDisplayName($headerRole); ?></small>
+                    <div class="user-details">
+                        <strong><?php echo isset($currentUser) && $currentUser ? htmlspecialchars($currentUser['username']) : 'Access Code User'; ?></strong>
+                        <small><?php echo RBAC::getRoleDisplayName($headerRole); ?></small>
+                    </div>
+                    <a href="settings.php" class="user-settings-btn" title="Settings">
+                        <span class="icon">⚙️</span>
+                    </a>
                 </div>
-                
-                <a href="settings.php" class="header-btn" title="Settings">
-                    <span class="icon">⚙️</span>
-                </a>
                 
                 <a href="?action=logout" class="header-btn btn-logout" title="Logout">
                     Logout

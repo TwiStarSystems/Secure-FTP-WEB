@@ -31,37 +31,7 @@ $isAdmin = RBAC::isAdmin();
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="simple-page public-page">
-    <div class="header simple-gradient">
-        <div class="header-content">
-            <h1>🔒 <?php echo SITE_NAME; ?></h1>
-            <div class="header-right">
-                <?php if ($isLoggedIn): ?>
-                    <a href="index.php" class="header-btn" title="Dashboard">
-                        <span class="icon">📁</span> Dashboard
-                    </a>
-                    
-                    <?php if ($isAdmin): ?>
-                        <a href="admin.php" class="header-btn" title="Admin Panel">
-                            <span class="icon">🔐</span> Admin
-                        </a>
-                    <?php endif; ?>
-                    
-                    <div class="user-info">
-                        <strong><?php echo htmlspecialchars($currentUser['username']); ?></strong>
-                        <small><?php echo RBAC::getRoleDisplayName(RBAC::getCurrentRole()); ?></small>
-                    </div>
-                    
-                    <a href="index.php?action=logout" class="header-btn btn-logout" title="Logout">
-                        Logout
-                    </a>
-                <?php else: ?>
-                    <a href="login.php" class="header-btn btn-login" title="Login">
-                        <span class="icon">🔑</span> Login
-                    </a>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
+    <?php include 'header.php'; ?>
     
     <div class="container">
         <div class="page-intro">
@@ -75,9 +45,6 @@ $isAdmin = RBAC::isAdmin();
                     <div class="empty-icon">📭</div>
                     <h3>No Public Files Available</h3>
                     <p>There are currently no publicly shared files available for download.</p>
-                    <?php if (!$isLoggedIn): ?>
-                        <p><a href="login.php" class="btn">Login to Upload Files</a></p>
-                    <?php endif; ?>
                 </div>
             </div>
         <?php else: ?>
@@ -127,18 +94,8 @@ $isAdmin = RBAC::isAdmin();
                 </div>
             </div>
         <?php endif; ?>
-        
-        <?php if (!$isLoggedIn): ?>
-            <div class="card login-prompt-card">
-                <h3>Want to share your own files?</h3>
-                <p>Login or register to upload and share files securely.</p>
-                <a href="login.php" class="btn">Login / Register</a>
-            </div>
-        <?php endif; ?>
     </div>
     
-    <footer class="page-footer">
-        <p>&copy; <?php echo date('Y'); ?> <?php echo SITE_NAME; ?>. Secure file sharing made simple.</p>
-    </footer>
+    <?php include 'footer.php'; ?>
 </body>
 </html>
