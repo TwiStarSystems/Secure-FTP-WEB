@@ -61,7 +61,7 @@ class FileManager {
             $hashAlgorithm = DEFAULT_HASH_ALGORITHM;
         }
         
-        // Generate unique filename with cryptographically secure random
+        // Generate unique filename with cryptographically secure random (32 hex characters with timestamp)
         $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
         // Validate extension is safe (alphanumeric only)
         $extension = preg_replace('/[^a-zA-Z0-9]/', '', $extension);

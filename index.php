@@ -120,7 +120,8 @@ $csrfToken = $auth->generateCSRFToken();
                 <?php if ($uploadMessage['type'] === 'success' && isset($uploadMessage['data'])): ?>
                     <div class="hash-info">
                         <strong>File Hash (<?php echo strtoupper($uploadMessage['data']['hash_algorithm']); ?>):</strong><br>
-                        <?php echo htmlspecialchars($uploadMessage['data']['file_hash']); ?>
+                        <span id="upload-hash"><?php echo htmlspecialchars($uploadMessage['data']['file_hash']); ?></span>
+                        <button type="button" onclick="copyHash('upload-hash')" class="btn btn-small" style="margin-left: 10px;">Copy</button>
                     </div>
                 <?php endif; ?>
                 <?php if (isset($uploadMessage['share_url'])): ?>
@@ -197,7 +198,8 @@ $csrfToken = $auth->generateCSRFToken();
                                 <?php endif; ?>
                                 <td><?php echo $fileManager->formatBytes($file['file_size']); ?></td>
                                 <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash']); ?>">
-                                    <?php echo substr($file['file_hash'], 0, 16); ?>...
+                                    <span class="hash-short"><?php echo substr($file['file_hash'], 0, 16); ?>...</span>
+                                    <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($file['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
                                 </td>
                                 <td><?php echo date('Y-m-d H:i', strtotime($file['upload_date'])); ?></td>
                                 <td><?php echo $file['download_count']; ?></td>
@@ -235,6 +237,33 @@ $csrfToken = $auth->generateCSRFToken();
             document.execCommand('copy');
             btn.textContent = 'Copied!';
             setTimeout(() => btn.textContent = 'Copy', 2000);
+        }
+        
+        function copyToClipboard(text) {
+            // Create temporary textarea to copy text
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                // Show brief confirmation
+                alert('Hash copied to clipboard!');
+            } catch (err) {
+                alert('Failed to copy hash');
+            }
+            
+            document.body.removeChild(textarea);
+        }
+        
+        function copyHash(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                copyToClipboard(element.textContent);
+            }
         }
     </script>
     

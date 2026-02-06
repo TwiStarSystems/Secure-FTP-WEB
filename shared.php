@@ -129,8 +129,9 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
     $sql = "UPDATE files SET download_count = download_count + 1 WHERE id = ?";
     $db->query($sql, [$share['file_id']]);
     
-    // Sanitize filename to prevent header injection
-    $safeFilename = preg_replace('/[^\w\-\.]/', '_', $share['original_filename']);
+    // Sanitize filename to prevent header injection - replace spaces with underscores
+    $safeFilename = str_replace(' ', '_', $share['original_filename']);
+    $safeFilename = preg_replace('/[^\w\-\.]/', '_', $safeFilename);
     $safeFilename = str_replace(["\r", "\n", "\0"], '', $safeFilename);
     
     // Set headers for file download
@@ -184,6 +185,7 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
                     <span class="label"><?php echo strtoupper($share['hash_algorithm']); ?> Hash:</span>
                     <span class="value hash-value" title="<?php echo htmlspecialchars($share['file_hash']); ?>">
                         <?php echo substr($share['file_hash'], 0, 16); ?>...
+                        <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($share['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
                     </span>
                 </div>
                 <?php endif; ?>
@@ -210,6 +212,26 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
             <a href="index.php">Back to Home</a>
         </div>
     </div>
+    
+    <script>
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                alert('Hash copied to clipboard!');
+            } catch (err) {
+                alert('Failed to copy hash');
+            }
+            
+            document.body.removeChild(textarea);
+        }
+    </script>
     
     <?php include 'footer.php'; ?>
 </body>

@@ -29,8 +29,9 @@ if (!$result['success']) {
     die('Error: ' . $result['error']);
 }
 
-// Sanitize filename to prevent header injection
-$safeFilename = preg_replace('/[^\w\-\.]/', '_', $result['filename']);
+// Sanitize filename to prevent header injection - replace spaces with underscores
+$safeFilename = str_replace(' ', '_', $result['filename']);
+$safeFilename = preg_replace('/[^\w\-\.]/', '_', $safeFilename);
 $safeFilename = str_replace(["\r", "\n", "\0"], '', $safeFilename);
 
 // Set headers for file download
