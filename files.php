@@ -2,6 +2,7 @@
 // File management functions
 require_once 'db.php';
 require_once 'auth.php';
+require_once 'rbac.php';
 
 class FileManager {
     private $db;
@@ -19,6 +20,11 @@ class FileManager {
     
     // Upload file
     public function uploadFile($file, $hashAlgorithm = DEFAULT_HASH_ALGORITHM) {
+        // Check permission using RBAC
+        if (!RBAC::hasPermission('files.upload')) {
+            return ['success' => false, 'error' => 'Permission denied.'];
+        }
+        
         // Validate file
         if (!isset($file['error']) || is_array($file['error'])) {
             return ['success' => false, 'error' => 'Invalid file upload.'];
@@ -125,9 +131,12 @@ class FileManager {
         $accessCode = $this->auth->getCurrentAccessCode();
         
         if ($user) {
-            if ($user['is_admin']) {
-                // Admin sees all files
-                $sql = "SELECT * FROM files ORDER BY upload_date DESC";
+            // Admin sees all files
+            if (RBAC::isAdmin()) {
+                $sql = "SELECT f.*, u.username as uploaded_by_username 
+                        FROM files f 
+                        LEFT JOIN users u ON f.uploaded_by_user = u.id 
+                        ORDER BY f.upload_date DESC";
                 return $this->db->fetchAll($sql);
             } else {
                 // Regular user sees their own files
@@ -141,6 +150,19 @@ class FileManager {
         }
         
         return [];
+    }
+    
+    // Get all files (admin only)
+    public function getAllFiles() {
+        if (!RBAC::isAdmin()) {
+            return [];
+        }
+        
+        $sql = "SELECT f.*, u.username as uploaded_by_username 
+                FROM files f 
+                LEFT JOIN users u ON f.uploaded_by_user = u.id 
+                ORDER BY f.upload_date DESC";
+        return $this->db->fetchAll($sql);
     }
     
     // Get file by ID
@@ -157,16 +179,22 @@ class FileManager {
             return ['success' => false, 'error' => 'File not found.'];
         }
         
-        // Check permissions
+        // Check permissions using RBAC
         $user = $this->auth->getCurrentUser();
         $accessCode = $this->auth->getCurrentAccessCode();
         
         $hasPermission = false;
-        if ($user) {
-            if ($user['is_admin'] || $file['uploaded_by_user'] === $user['id']) {
-                $hasPermission = true;
-            }
-        } elseif ($accessCode && $file['uploaded_by_code'] === $accessCode['id']) {
+        
+        // Admin can download all files
+        if (RBAC::isAdmin()) {
+            $hasPermission = true;
+        }
+        // User can download their own files
+        elseif ($user && $file['uploaded_by_user'] === $user['id']) {
+            $hasPermission = true;
+        }
+        // Access code user can download files from their code
+        elseif ($accessCode && $file['uploaded_by_code'] === $accessCode['id']) {
             $hasPermission = true;
         }
         
@@ -205,10 +233,15 @@ class FileManager {
             return ['success' => false, 'error' => 'File not found.'];
         }
         
-        // Check permissions (only admin or file owner)
+        // Check permissions using RBAC
         $user = $this->auth->getCurrentUser();
         
-        if (!$user || (!$user['is_admin'] && $file['uploaded_by_user'] !== $user['id'])) {
+        if (!$user) {
+            return ['success' => false, 'error' => 'Permission denied.'];
+        }
+        
+        // Use RBAC to check delete permission
+        if (!RBAC::canDeleteFile($file, $user)) {
             return ['success' => false, 'error' => 'Permission denied.'];
         }
         

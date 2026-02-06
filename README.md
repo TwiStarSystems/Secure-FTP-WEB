@@ -11,10 +11,22 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 - **Smooth Animations**: Polished user experience with subtle transitions
 
 ### 🔐 Authentication & Access Control
+- **Role-Based Access Control (RBAC)**: Comprehensive permission system with three user roles:
+  - **Admin**: Full control over all files, users, and system settings
+  - **User**: Authenticated users can manage their own files and create share links
+  - **Anonymous**: Non-authenticated visitors can only view publicly shared files
 - **Admin Login**: Full administrative control with user management capabilities
 - **User Management**: Create regular and temporary users with auto-deletion on expiry dates
 - **Access Codes**: Generate temporary access codes with limited login counts and expiry dates
 - **CSRF Protection**: Built-in Cross-Site Request Forgery protection for all forms
+
+### 🔗 File Sharing
+- **Public Share Links**: Create shareable links for files accessible to anyone
+- **Password Protection**: Optionally password-protect shared files
+- **Expiry Dates**: Set automatic expiration for share links
+- **Download Limits**: Limit the number of downloads per share link
+- **Share Management**: Track and manage all your shared links in one place
+- **Public Files Page**: Anonymous users see a curated list of publicly shared files
 
 ### 📊 Quota Management
 - **Per-User Quotas**: Set individual upload quotas for each user
@@ -125,6 +137,30 @@ For manual installation or other operating systems, see the detailed instruction
 1. View your files in the dashboard
 2. Click "Download" next to the file
 3. Verify file integrity using the displayed hash
+
+### Sharing Files
+1. Upload a file to your dashboard
+2. Click "Share" next to the file for a quick public share link
+3. Or go to "My Shares" for advanced options:
+   - Set password protection
+   - Set expiry date
+   - Limit download count
+   - Choose public/private visibility
+4. Copy and share the generated link
+
+### User Roles & Permissions
+
+| Feature | Admin | User | Anonymous |
+|---------|-------|------|-----------|
+| View public files | ✓ | ✓ | ✓ |
+| Download shared files | ✓ | ✓ | ✓ |
+| Upload files | ✓ | ✓ | ✗ |
+| Manage own files | ✓ | ✓ | ✗ |
+| Create share links | ✓ | ✓ | ✗ |
+| View all files | ✓ | ✗ | ✗ |
+| Manage all files | ✓ | ✗ | ✗ |
+| Manage users | ✓ | ✗ | ✗ |
+| Access admin panel | ✓ | ✗ | ✗ |
 
 ## Security Features
 

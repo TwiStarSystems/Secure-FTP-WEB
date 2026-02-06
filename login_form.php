@@ -54,6 +54,10 @@
                 <button type="submit" class="btn">Access</button>
             </form>
         </div>
+        
+        <div class="back-link">
+            <a href="public.php">← Browse Public Files</a>
+        </div>
     </div>
     
     <script>

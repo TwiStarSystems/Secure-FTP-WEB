@@ -5,22 +5,25 @@ require_once 'db.php';
 require_once 'auth.php';
 require_once 'files.php';
 require_once 'users.php';
+require_once 'share.php';
+require_once 'rbac.php';
 
 $db = new Database();
 $auth = new Auth($db);
 $fileManager = new FileManager($db, $auth);
 $userManager = new UserManager($db);
+$shareManager = new ShareManager($db);
 
-// Check if logged in
+// Check if logged in - redirect anonymous users to public page
 if (!$auth->isLoggedIn()) {
-    header('Location: login.php');
+    header('Location: public.php');
     exit;
 }
 
 // Handle logout
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     $auth->logout();
-    header('Location: login.php');
+    header('Location: public.php');
     exit;
 }
 
@@ -58,10 +61,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Handle quick share creation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'quick_share') {
+    // Verify CSRF token
+    if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
+        $uploadMessage = ['type' => 'error', 'message' => 'Invalid request.'];
+    } elseif (isset($_POST['file_id'])) {
+        $currentUser = $auth->getCurrentUser();
+        $result = $shareManager->createShare($_POST['file_id'], $currentUser['id'], ['is_public' => true]);
+        if ($result['success']) {
+            $uploadMessage = ['type' => 'success', 'message' => 'Share link created!', 'share_url' => $result['share_url']];
+        } else {
+            $uploadMessage = ['type' => 'error', 'message' => $result['error']];
+        }
+    }
+}
+
 // Get current user info
 $currentUser = $auth->getCurrentUser();
 $currentAccessCode = $auth->getCurrentAccessCode();
-$isAdmin = $auth->isAdmin();
+$isAdmin = RBAC::isAdmin();
 
 // Get files
 $files = $fileManager->getFiles();
@@ -102,6 +121,13 @@ $csrfToken = $auth->generateCSRFToken();
                     <div class="hash-info">
                         <strong>File Hash (<?php echo strtoupper($uploadMessage['data']['hash_algorithm']); ?>):</strong><br>
                         <?php echo htmlspecialchars($uploadMessage['data']['file_hash']); ?>
+                    </div>
+                <?php endif; ?>
+                <?php if (isset($uploadMessage['share_url'])): ?>
+                    <div class="share-url-display">
+                        <strong>Share URL:</strong>
+                        <input type="text" value="<?php echo htmlspecialchars($uploadMessage['share_url']); ?>" readonly onclick="this.select();" class="share-url-input">
+                        <button type="button" onclick="copyShareUrl(this)" class="btn btn-small">Copy</button>
                     </div>
                 <?php endif; ?>
             </div>
@@ -154,6 +180,7 @@ $csrfToken = $auth->generateCSRFToken();
                     <thead>
                         <tr>
                             <th>Filename</th>
+                            <?php if ($isAdmin): ?><th>Owner</th><?php endif; ?>
                             <th>Size</th>
                             <th>Hash (<?php echo strtoupper(DEFAULT_HASH_ALGORITHM); ?>)</th>
                             <th>Uploaded</th>
@@ -165,6 +192,9 @@ $csrfToken = $auth->generateCSRFToken();
                         <?php foreach ($files as $file): ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($file['original_filename']); ?></td>
+                                <?php if ($isAdmin): ?>
+                                    <td><?php echo isset($file['uploaded_by_username']) ? htmlspecialchars($file['uploaded_by_username']) : 'N/A'; ?></td>
+                                <?php endif; ?>
                                 <td><?php echo $fileManager->formatBytes($file['file_size']); ?></td>
                                 <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash']); ?>">
                                     <?php echo substr($file['file_hash'], 0, 16); ?>...
@@ -173,7 +203,15 @@ $csrfToken = $auth->generateCSRFToken();
                                 <td><?php echo $file['download_count']; ?></td>
                                 <td class="actions">
                                     <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
-                                    <?php if ($currentUser && ($isAdmin || $file['uploaded_by_user'] === $currentUser['id'])): ?>
+                                    <?php if ($currentUser && RBAC::canShareFile($file, $currentUser)): ?>
+                                        <form method="POST" style="display: inline;">
+                                            <input type="hidden" name="action" value="quick_share">
+                                            <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                            <button type="submit" class="btn btn-small btn-share" title="Create share link">Share</button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <?php if ($currentUser && RBAC::canDeleteFile($file, $currentUser)): ?>
                                         <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
@@ -189,5 +227,15 @@ $csrfToken = $auth->generateCSRFToken();
             <?php endif; ?>
         </div>
     </div>
+    
+    <script>
+        function copyShareUrl(btn) {
+            const input = btn.previousElementSibling;
+            input.select();
+            document.execCommand('copy');
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = 'Copy', 2000);
+        }
+    </script>
 </body>
 </html>

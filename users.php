@@ -1,6 +1,7 @@
 <?php
 // User management functions (admin only)
 require_once 'db.php';
+require_once 'rbac.php';
 
 class UserManager {
     private $db;
@@ -10,10 +11,15 @@ class UserManager {
     }
     
     // Create new user
-    public function createUser($username, $password, $email, $isAdmin = false, $uploadQuota = 1073741824, $isTemporary = false, $expiryDate = null) {
+    public function createUser($username, $password, $email, $role = 'user', $uploadQuota = 1073741824, $isTemporary = false, $expiryDate = null) {
         // Validate input
         if (empty($username) || empty($password)) {
             return ['success' => false, 'error' => 'Username and password are required.'];
+        }
+        
+        // Validate role
+        if (!in_array($role, ['admin', 'user'])) {
+            $role = 'user';
         }
         
         // Check if username exists
@@ -27,14 +33,18 @@ class UserManager {
         // Hash password
         $passwordHash = password_hash($password, PASSWORD_DEFAULT);
         
+        // Set is_admin for backward compatibility
+        $isAdmin = ($role === 'admin');
+        
         // Insert user
-        $sql = "INSERT INTO users (username, password_hash, email, is_admin, upload_quota, is_temporary, expiry_date) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO users (username, password_hash, email, role, is_admin, upload_quota, is_temporary, expiry_date) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         
         $result = $this->db->query($sql, [
             $username,
             $passwordHash,
             $email,
+            $role,
             $isAdmin,
             $uploadQuota,
             $isTemporary,
@@ -63,9 +73,21 @@ class UserManager {
             $params[] = $data['upload_quota'];
         }
         
-        if (isset($data['is_admin'])) {
+        // Handle role update
+        if (isset($data['role'])) {
+            if (in_array($data['role'], ['admin', 'user'])) {
+                $updates[] = "role = ?";
+                $params[] = $data['role'];
+                // Also update is_admin for backward compatibility
+                $updates[] = "is_admin = ?";
+                $params[] = ($data['role'] === 'admin');
+            }
+        } elseif (isset($data['is_admin'])) {
+            // Backward compatibility: if is_admin is set, update role too
             $updates[] = "is_admin = ?";
             $params[] = $data['is_admin'];
+            $updates[] = "role = ?";
+            $params[] = $data['is_admin'] ? 'admin' : 'user';
         }
         
         if (isset($data['is_active'])) {
@@ -130,14 +152,14 @@ class UserManager {
     
     // Get all users
     public function getAllUsers() {
-        $sql = "SELECT id, username, email, is_admin, upload_quota, used_quota, is_temporary, expiry_date, created_at, last_login, is_active 
+        $sql = "SELECT id, username, email, role, is_admin, upload_quota, used_quota, is_temporary, expiry_date, created_at, last_login, is_active 
                 FROM users ORDER BY created_at DESC";
         return $this->db->fetchAll($sql);
     }
     
     // Get user by ID
     public function getUser($userId) {
-        $sql = "SELECT id, username, email, is_admin, upload_quota, used_quota, is_temporary, expiry_date, created_at, last_login, is_active 
+        $sql = "SELECT id, username, email, role, is_admin, upload_quota, used_quota, is_temporary, expiry_date, created_at, last_login, is_active 
                 FROM users WHERE id = ?";
         return $this->db->fetch($sql, [$userId]);
     }

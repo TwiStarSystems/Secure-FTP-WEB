@@ -58,8 +58,6 @@
 
 /* Reset and Base Styles */
 * {
-  margin: 5px;
-  padding: 3px;
   box-sizing: border-box;
 }
 
@@ -883,7 +881,6 @@ body.login-page {
   background: rgba(0, 0, 48, 0.85);
   backdrop-filter: blur(10px);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
   color: var(--color-text);
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-md);
@@ -958,3 +955,340 @@ body.simple-page {
     page-break-inside: avoid;
   }
 }
+
+/* ======================================
+   RBAC & Share Feature Styles
+   ====================================== */
+
+/* Login Button in Header */
+.header-btn.btn-login {
+  background: var(--gradient-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.header-btn.btn-login:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-accent);
+}
+
+/* Share Button */
+.btn-share {
+  background: linear-gradient(135deg, #0066cc 0%, #0099ff 100%);
+  color: white !important;
+}
+
+.btn-share:hover {
+  background: linear-gradient(135deg, #0055aa 0%, #0088ee 100%);
+}
+
+/* Logo Link */
+.logo-link {
+  text-decoration: none;
+  color: inherit;
+  background: var(--gradient-primary);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo-link:hover {
+  opacity: 0.9;
+}
+
+/* Public Page Styles */
+.public-page .page-intro {
+  text-align: center;
+  padding: var(--spacing-lg) 0;
+}
+
+.public-page .page-intro h2 {
+  font-size: 1.75rem;
+  margin-bottom: var(--spacing-sm);
+  background: var(--gradient-primary);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.public-page .page-intro p {
+  color: var(--color-muted);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Files Grid for Public Page */
+.files-grid {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.public-files-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+/* File Card */
+.file-card {
+  background: rgba(150, 0, 225, 0.1);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  transition: all 0.3s ease;
+}
+
+.file-card:hover {
+  background: rgba(150, 0, 225, 0.15);
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.file-card .file-icon {
+  font-size: 2.5rem;
+  text-align: center;
+  padding: var(--spacing-sm) 0;
+}
+
+.file-card .file-info {
+  flex: 1;
+}
+
+.file-card .file-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+  word-break: break-word;
+}
+
+.file-card .file-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.file-card .file-separator {
+  color: var(--color-border);
+}
+
+.file-card .file-actions {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: var(--spacing-xl);
+}
+
+.empty-state .empty-icon {
+  font-size: 4rem;
+  margin-bottom: var(--spacing-md);
+  opacity: 0.5;
+}
+
+.empty-state h3 {
+  color: var(--color-text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.empty-state p {
+  color: var(--color-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+/* Login Prompt Card */
+.login-prompt-card {
+  text-align: center;
+  background: rgba(150, 0, 225, 0.15);
+  border: 1px dashed var(--color-primary);
+}
+
+.login-prompt-card h3 {
+  color: var(--color-text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.login-prompt-card p {
+  color: var(--color-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+/* Page Footer */
+.page-footer {
+  text-align: center;
+  padding: var(--spacing-lg);
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--spacing-xl);
+}
+
+/* Share URL Display */
+.share-url-display {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.share-url-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 48, 0.5);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+/* Shared File Page */
+.shared-file-page {
+  max-width: 500px;
+}
+
+.file-info-card {
+  background: rgba(150, 0, 225, 0.1);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  text-align: center;
+}
+
+.file-info-card .file-icon {
+  font-size: 4rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.file-info-card h3 {
+  color: var(--color-text);
+  font-size: 1.25rem;
+  margin-bottom: var(--spacing-md);
+  word-break: break-word;
+}
+
+.file-details {
+  text-align: left;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-row .label {
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.detail-row .value {
+  color: var(--color-text);
+}
+
+.detail-row .hash-value {
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.btn-download {
+  display: block;
+  text-align: center;
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.1rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.back-link {
+  text-align: center;
+  margin-top: var(--spacing-md);
+}
+
+.back-link a {
+  color: var(--color-muted);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.back-link a:hover {
+  color: var(--color-primary);
+}
+
+/* My Shares Page */
+.share-form {
+  margin-bottom: var(--spacing-md);
+}
+
+.shares-table {
+  width: 100%;
+}
+
+.shares-table .inactive-row {
+  opacity: 0.6;
+}
+
+.file-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Badge Styles for Info */
+.badge-info {
+  background: linear-gradient(135deg, #0066cc 0%, #0099ff 100%);
+  color: white;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Responsive for Public Page */
+@media (max-width: 768px) {
+  .public-files-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .header-content {
+    flex-wrap: wrap;
+  }
+  
+  .header h1 {
+    font-size: 1.25rem;
+  }
+  
+  .header-right {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+  
+  .user-info {
+    display: none;
+  }
+  
+  .share-url-display {
+    flex-direction: column;
+  }
+  
+  .share-url-input {
+    width: 100%;
+  }
+}
+

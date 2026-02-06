@@ -1,6 +1,7 @@
 <?php
 // Authentication and rate limiting functions
 require_once 'db.php';
+require_once 'rbac.php';
 
 class Auth {
     private $db;
@@ -68,10 +69,14 @@ class Auth {
             // Record successful attempt
             $this->recordLoginAttempt($identifier, true);
             
+            // Determine role - check role column first, fall back to is_admin
+            $role = isset($user['role']) && !empty($user['role']) ? $user['role'] : ($user['is_admin'] ? 'admin' : 'user');
+            
             // Set session
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['is_admin'] = $user['is_admin'];
+            $_SESSION['user_role'] = $role;
             $_SESSION['login_time'] = time();
             
             return ['success' => true, 'user' => $user];
@@ -188,6 +193,16 @@ class Auth {
         // Rotate token after verification for security
         unset($_SESSION['csrf_token']);
         return true;
+    }
+    
+    // Get current user role using RBAC
+    public function getRole() {
+        return RBAC::getCurrentRole();
+    }
+    
+    // Check if user has permission using RBAC
+    public function hasPermission($permission) {
+        return RBAC::hasPermission($permission);
     }
 }
 ?>

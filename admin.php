@@ -5,14 +5,15 @@ require_once 'db.php';
 require_once 'auth.php';
 require_once 'users.php';
 require_once 'files.php';
+require_once 'rbac.php';
 
 $db = new Database();
 $auth = new Auth($db);
 $userManager = new UserManager($db);
 $fileManager = new FileManager($db, $auth);
 
-// Check if logged in and is admin
-if (!$auth->isLoggedIn() || !$auth->isAdmin()) {
+// Check if logged in and is admin using RBAC
+if (!$auth->isLoggedIn() || !RBAC::isAdmin()) {
     header('Location: login.php');
     exit;
 }
@@ -27,12 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($_POST['action'] === 'create_user') {
             $isTemporary = isset($_POST['is_temporary']);
             $expiryDate = $isTemporary && !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null;
+            $role = $_POST['role'] ?? 'user';
             
             $result = $userManager->createUser(
                 $_POST['username'],
                 $_POST['password'],
                 $_POST['email'],
-                isset($_POST['is_admin']),
+                $role,
                 intval($_POST['upload_quota']),
                 $isTemporary,
                 $expiryDate
@@ -130,9 +132,12 @@ $csrfToken = $auth->generateCSRFToken();
                 </div>
                 
                 <div class="form-grid">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="is_admin" name="is_admin">
-                        <label for="is_admin" style="margin: 0">Administrator</label>
+                    <div class="form-group">
+                        <label for="role">User Role</label>
+                        <select id="role" name="role">
+                            <option value="user" selected>User - Can manage own files</option>
+                            <option value="admin">Admin - Full system access</option>
+                        </select>
                     </div>
                     
                     <div class="checkbox-group">
@@ -198,8 +203,12 @@ $csrfToken = $auth->generateCSRFToken();
                             <td><?php echo htmlspecialchars($user['username']); ?></td>
                             <td><?php echo htmlspecialchars($user['email']); ?></td>
                             <td>
-                                <?php if ($user['is_admin']): ?>
+                                <?php 
+                                $userRole = isset($user['role']) && !empty($user['role']) ? $user['role'] : ($user['is_admin'] ? 'admin' : 'user');
+                                if ($userRole === 'admin'): ?>
                                     <span class="badge badge-danger">Admin</span>
+                                <?php else: ?>
+                                    <span class="badge badge-info">User</span>
                                 <?php endif; ?>
                                 <?php if ($user['is_temporary']): ?>
                                     <span class="badge badge-warning">Temporary</span>

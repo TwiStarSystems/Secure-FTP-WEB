@@ -7,8 +7,20 @@
 - ✅ Rate limiting: 5 failed attempts, 15-minute lockout
 - ✅ Session management with automatic timeout (1 hour)
 - ✅ CSRF protection with token rotation on all forms
-- ✅ Separate admin and user roles with permission checks
+- ✅ Role-Based Access Control (RBAC) with three roles:
+  - **Admin**: Full system access - manage all files, users, shares
+  - **User**: Authenticated access - manage own files and shares
+  - **Anonymous**: Public access - view/download publicly shared files only
+- ✅ Permission-based access checks for all file operations
 - ✅ Secure access code system with limited uses
+
+### File Sharing Security
+- ✅ Cryptographically secure share tokens (64 characters, random_bytes)
+- ✅ Optional password protection for shared files
+- ✅ Expiry dates for time-limited shares
+- ✅ Download limits to prevent abuse
+- ✅ Share link deactivation capability
+- ✅ Owner-only share management (admins can manage all)
 
 ### Input Validation & Sanitization
 - ✅ All user inputs validated and sanitized
