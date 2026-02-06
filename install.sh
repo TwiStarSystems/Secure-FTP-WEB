@@ -249,6 +249,27 @@ else
     echo "  Database User:       $DB_USER"
     echo ""
 
+    # Check for existing installation
+    if [ -d "$APP_DIR" ] && [ "$(ls -A $APP_DIR)" ]; then
+        print_warning "EXISTING INSTALLATION DETECTED!"
+        echo ""
+        echo "The directory $APP_DIR already contains files."
+        echo "The installation will:"
+        echo "  • Delete and recreate the database: $DB_NAME"
+        echo "  • Replace all application files"
+        echo "  • Create a fresh uploads directory"
+        echo ""
+        if ! prompt_yes_no "Continue with CLEAN INSTALLATION (all data will be lost)?" "n"; then
+            print_error "Installation cancelled by user."
+            echo ""
+            echo "If you want to update an existing installation, run:"
+            echo "  sudo ./install.sh --update"
+            exit 0
+        fi
+        print_warning "Proceeding with clean installation..."
+    fi
+    echo ""
+
     if ! prompt_yes_no "Proceed with these settings?" "y"; then
         print_error "Installation cancelled by user."
         exit 0
@@ -299,15 +320,58 @@ if [ "$UPDATE_MODE" = false ]; then
 
     # Configure MySQL - Drop existing database and user to ensure clean install
     print_message "Cleaning up any existing database and user..."
-    mysql -e "DROP DATABASE IF EXISTS ${DB_NAME};" 2>/dev/null || true
-    mysql -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';" 2>/dev/null || true
+    
+    # Force drop the database
+    mysql -e "DROP DATABASE IF EXISTS ${DB_NAME};" 2>&1 | grep -v "Warning" || true
+    
+    # Force drop the user - try multiple methods to ensure cleanup
+    mysql -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';" 2>&1 | grep -v "Warning" || true
+    mysql -e "DROP USER IF EXISTS '${DB_USER}'@'%';" 2>&1 | grep -v "Warning" || true
+    
+    # Flush privileges to ensure changes take effect
     mysql -e "FLUSH PRIVILEGES;"
     
+    # Wait a moment for changes to propagate
+    sleep 1
+    
     print_message "Creating fresh database and user..."
-    mysql -e "CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    mysql -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-    mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
+    
+    # Create database
+    if mysql -e "CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; then
+        print_message "Database '${DB_NAME}' created successfully"
+    else
+        print_error "Failed to create database '${DB_NAME}'"
+        exit 1
+    fi
+    
+    # Create user
+    if mysql -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"; then
+        print_message "Database user '${DB_USER}' created successfully"
+    else
+        print_error "Failed to create database user '${DB_USER}'"
+        exit 1
+    fi
+    
+    # Grant privileges
+    if mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"; then
+        print_message "Privileges granted successfully"
+    else
+        print_error "Failed to grant privileges"
+        exit 1
+    fi
+    
+    # Flush privileges again
     mysql -e "FLUSH PRIVILEGES;"
+    
+    # Verify connection works with new credentials
+    if mysql -u "${DB_USER}" -p"${DB_PASS}" -e "SELECT 1;" ${DB_NAME} >/dev/null 2>&1; then
+        print_message "Database connection verified successfully"
+    else
+        print_error "Failed to verify database connection"
+        print_error "Please check the database credentials and try again"
+        exit 1
+    fi
+    
     print_message "Database configured successfully"
 fi
 
@@ -318,6 +382,15 @@ else
     print_header "STEP 8: Application Installation"
 fi
 print_message "Setting up application directory..."
+
+# If not in update mode, clean out any existing installation
+if [ "$UPDATE_MODE" = false ]; then
+    if [ -d "${APP_DIR}" ]; then
+        print_message "Removing existing installation directory..."
+        rm -rf ${APP_DIR}
+    fi
+fi
+
 mkdir -p ${APP_DIR}
 
 # Backup config.php and uploads in update mode
@@ -391,11 +464,25 @@ if [ "$UPDATE_MODE" = false ]; then
     print_header "STEP 10: Application Configuration"
     print_message "Configuring application..."
     if [ -f "${APP_DIR}/config.php" ]; then
-        # Update database configuration
-        sed -i "s/define('DB_PASS', '.*');/define('DB_PASS', '${DB_PASS}');/" ${APP_DIR}/config.php
-        sed -i "s/define('DB_USER', '.*');/define('DB_USER', '${DB_USER}');/" ${APP_DIR}/config.php
-        sed -i "s/define('DB_NAME', '.*');/define('DB_NAME', '${DB_NAME}');/" ${APP_DIR}/config.php
-        print_message "Application configured successfully"
+        # Update database configuration - escape special characters in password
+        DB_PASS_ESCAPED=$(printf '%s\n' "$DB_PASS" | sed -e 's/[\/&]/\\&/g')
+        
+        # Update each define line, handling optional comments
+        sed -i "s|define('DB_PASS', '[^']*').*|define('DB_PASS', '${DB_PASS_ESCAPED}');|" ${APP_DIR}/config.php
+        sed -i "s|define('DB_USER', '[^']*').*|define('DB_USER', '${DB_USER}');|" ${APP_DIR}/config.php
+        sed -i "s|define('DB_NAME', '[^']*').*|define('DB_NAME', '${DB_NAME}');|" ${APP_DIR}/config.php
+        
+        # Verify the changes were made
+        if grep -q "define('DB_PASS', '${DB_PASS_ESCAPED}');" ${APP_DIR}/config.php; then
+            print_message "Application configured successfully"
+        else
+            print_error "Failed to update config.php with database credentials"
+            print_error "Please manually update ${APP_DIR}/config.php with the following credentials:"
+            echo "  DB_NAME: ${DB_NAME}"
+            echo "  DB_USER: ${DB_USER}"
+            echo "  DB_PASS: ${DB_PASS}"
+            exit 1
+        fi
     else
         print_error "config.php not found in ${APP_DIR}"
         exit 1
@@ -592,10 +679,10 @@ ADMIN_PASS="admin"
 # Hash password using PHP
 ADMIN_PASS_HASH=$(php -r "echo password_hash('${ADMIN_PASS}', PASSWORD_BCRYPT);")
 
-# Insert admin user into database
-mysql ${DB_NAME} -e "INSERT INTO users (username, password_hash, is_admin, is_active) VALUES ('${ADMIN_USER}', '${ADMIN_PASS_HASH}', TRUE, TRUE) ON DUPLICATE KEY UPDATE password_hash='${ADMIN_PASS_HASH}';"
+# Insert admin user into database with role support
+mysql ${DB_NAME} -e "INSERT INTO users (username, password_hash, email, role, is_admin, is_active) VALUES ('${ADMIN_USER}', '${ADMIN_PASS_HASH}', 'admin@example.com', 'admin', TRUE, TRUE) ON DUPLICATE KEY UPDATE password_hash='${ADMIN_PASS_HASH}', role='admin', is_admin=TRUE;"
 
-print_message "Admin user '${ADMIN_USER}' created successfully"
+print_message "Admin user '${ADMIN_USER}' created successfully with admin role"
 
 # SSL Configuration
 if [ "$SETUP_SSL" = true ]; then
