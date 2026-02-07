@@ -1,0 +1,208 @@
+# Nginx Reverse Proxy Configuration for Secure FTP Web Application
+# 
+# This configuration file should be placed on your reverse proxy server
+# (NOT on the server running the Secure FTP application).
+#
+# Installation Instructions:
+# 1. Copy this file to /etc/nginx/sites-available/ on your reverse proxy server
+# 2. Rename it appropriately (e.g., secure-ftp-proxy.conf)
+# 3. Edit the configuration below to match your environment
+# 4. Create a symlink: ln -s /etc/nginx/sites-available/secure-ftp-proxy.conf /etc/nginx/sites-enabled/
+# 5. Test configuration: nginx -t
+# 6. Reload Nginx: systemctl reload nginx
+
+# Define upstream backend server
+# Replace with your actual backend server IP and port
+upstream secure_ftp_backend {
+    # Backend server running the Secure FTP application
+    # If the backend is on the same machine, use localhost or 127.0.0.1
+    # If on a different machine, use the server's IP address
+    server 127.0.0.1:8080;
+    
+    # For multiple backend servers (load balancing), add more servers:
+    # server 192.168.1.10:80;
+    # server 192.168.1.11:80;
+    
+    # Connection settings
+    keepalive 32;
+    keepalive_timeout 300s;
+}
+
+# HTTP Server - Redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    
+    # Replace with your actual domain name
+    server_name secure-ftp.example.com;
+    
+    # Redirect all HTTP traffic to HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS Server - Main reverse proxy configuration
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    
+    # Replace with your actual domain name
+    server_name secure-ftp.example.com;
+    
+    # SSL Certificate Configuration
+    # Replace these paths with your actual SSL certificate paths
+    ssl_certificate /etc/ssl/certs/secure-ftp.example.com.crt;
+    ssl_certificate_key /etc/ssl/private/secure-ftp.example.com.key;
+    
+    # SSL Configuration - Modern and secure
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+    
+    # SSL Session Configuration
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_session_tickets off;
+    
+    # OCSP Stapling
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/ssl/certs/secure-ftp.example.com-chain.crt;
+    resolver 8.8.8.8 8.8.4.4 valid=300s;
+    resolver_timeout 5s;
+    
+    # Security Headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    
+    # Remove Nginx version from headers
+    server_tokens off;
+    
+    # Max upload size (10GB to match application config)
+    client_max_body_size 10G;
+    
+    # Buffer settings for large uploads
+    client_body_buffer_size 256k;
+    client_header_buffer_size 4k;
+    large_client_header_buffers 4 32k;
+    
+    # Timeouts for large file uploads
+    client_body_timeout 300s;
+    client_header_timeout 300s;
+    proxy_connect_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    send_timeout 300s;
+    
+    # Logging
+    access_log /var/log/nginx/secure-ftp-proxy-access.log;
+    error_log /var/log/nginx/secure-ftp-proxy-error.log;
+    
+    # Main location block - Proxy to backend
+    location / {
+        # Proxy headers - Essential for the application to work correctly
+        proxy_pass http://secure_ftp_backend;
+        
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        
+        # WebSocket support (if needed in the future)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # Disable buffering for large file uploads
+        proxy_request_buffering off;
+        proxy_buffering off;
+        
+        # HTTP version
+        proxy_http_version 1.1;
+        
+        # Redirect handling
+        proxy_redirect off;
+    }
+    
+    # Static file caching (CSS, JS, images)
+    location ~* \.(css|js|jpg|jpeg|png|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        proxy_pass http://secure_ftp_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Enable caching for static assets
+        proxy_cache_bypass $http_pragma $http_authorization;
+        add_header Cache-Control "public, max-age=604800, immutable";
+        expires 7d;
+        
+        # Disable logging for static files (optional)
+        access_log off;
+    }
+    
+    # Health check endpoint (optional)
+    # Uncomment if you want to add a health check endpoint
+    # location /health {
+    #     access_log off;
+    #     return 200 "OK\n";
+    #     add_header Content-Type text/plain;
+    # }
+}
+
+# Additional Configuration Notes:
+# ================================
+#
+# 1. Backend Server Configuration:
+#    - The upstream server should point to where your Secure FTP app is running
+#    - If using the default secure-ftp.conf, it listens on port 80
+#    - Example: server 192.168.1.100:80; (replace with your backend IP)
+#
+# 2. SSL Certificates:
+#    - Obtain SSL certificates from Let's Encrypt or your certificate provider
+#    - For Let's Encrypt: certbot --nginx -d secure-ftp.example.com
+#    - Update the ssl_certificate and ssl_certificate_key paths accordingly
+#
+# 3. Domain Name:
+#    - Replace all instances of "secure-ftp.example.com" with your actual domain
+#    - Ensure DNS is properly configured to point to this reverse proxy server
+#
+# 4. Firewall Configuration:
+#    - Open ports 80 and 443 on the reverse proxy server
+#    - Backend server only needs to accept connections from the reverse proxy
+#    - Consider blocking direct public access to the backend server
+#
+# 5. File Upload Size:
+#    - client_max_body_size is set to 10G to match the application config
+#    - Adjust this value if you've changed MAX_FILE_SIZE in config.php
+#    - Also ensure php.ini on backend has matching upload_max_filesize and post_max_size
+#
+# 6. Load Balancing:
+#    - To add load balancing, add multiple servers in the upstream block
+#    - Nginx will automatically distribute load using round-robin by default
+#    - You can specify different load balancing methods (ip_hash, least_conn, etc.)
+#
+# 7. Rate Limiting (optional):
+#    - Add rate limiting to protect against abuse:
+#    - Add to http block: limit_req_zone $binary_remote_addr zone=one:10m rate=10r/s;
+#    - Add to location: limit_req zone=one burst=20 nodelay;
+#
+# 8. IP Whitelisting (optional):
+#    - To restrict access to specific IPs, add to server block:
+#    - allow 192.168.1.0/24;
+#    - deny all;
+#
+# 9. Testing:
+#    - Test configuration: nginx -t
+#    - Check backend connectivity: curl -I http://127.0.0.1:8080
+#    - Monitor logs: tail -f /var/log/nginx/secure-ftp-proxy-*.log
+#
+# 10. Troubleshooting:
+#    - If share URLs don't work, verify X-Forwarded-* headers are set correctly
+#    - Check that the backend can see the correct headers in $_SERVER
+#    - Ensure proxy_redirect is set to off
+#    - Verify client_max_body_size matches on both proxy and backend

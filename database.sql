@@ -81,6 +81,19 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     INDEX idx_identifier_time (identifier, attempt_time)
 );
 
+-- Application settings table
+CREATE TABLE IF NOT EXISTS app_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT,
+    setting_type ENUM('string', 'integer', 'boolean', 'json') DEFAULT 'string',
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by INT,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_setting_key (setting_key)
+);
+
 -- Create default admin user (username: admin, password: admin123)
 -- IMPORTANT: Change this password immediately after installation!
 -- Password hash for 'admin123'

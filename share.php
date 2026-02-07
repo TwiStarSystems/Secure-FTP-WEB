@@ -79,13 +79,11 @@ class ShareManager {
     
     /**
      * Get the full share URL for a token
+     * Uses proxy-aware URL generation to work correctly behind reverse proxy
      */
     public function getShareUrl($shareToken) {
-        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $basePath = dirname($_SERVER['SCRIPT_NAME']);
-        $basePath = rtrim($basePath, '/');
-        return "{$protocol}://{$host}{$basePath}/shared.php?token={$shareToken}";
+        $baseUrl = getBaseUrl();
+        return "{$baseUrl}/shared.php?token={$shareToken}";
     }
     
     /**

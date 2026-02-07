@@ -1,5 +1,5 @@
 <?php
-// Admin panel
+// Admin Settings Panel
 require_once 'config.php';
 require_once 'db.php';
 require_once 'auth.php';
@@ -20,12 +20,52 @@ if (!$auth->isLoggedIn() || !RBAC::isAdmin()) {
 
 $message = null;
 
-// Handle user creation
+// Handle application settings updates
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
         $message = ['type' => 'error', 'message' => 'Invalid request.'];
     } else {
-        if ($_POST['action'] === 'create_user') {
+        if ($_POST['action'] === 'update_base_url') {
+            $baseUrl = trim($_POST['base_url']);
+            
+            // Validate base URL format
+            if (!empty($baseUrl)) {
+                // Remove trailing slash
+                $baseUrl = rtrim($baseUrl, '/');
+                
+                // Validate URL format
+                if (!filter_var($baseUrl, FILTER_VALIDATE_URL)) {
+                    $message = ['type' => 'error', 'message' => 'Invalid URL format. Please use format: https://example.com'];
+                } else {
+                    // Save to database
+                    $sql = "INSERT INTO app_settings (setting_key, setting_value, setting_type, description, updated_by) 
+                            VALUES (?, ?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE 
+                            setting_value = VALUES(setting_value),
+                            updated_at = CURRENT_TIMESTAMP,
+                            updated_by = VALUES(updated_by)";
+                    
+                    $result = $db->query($sql, [
+                        'base_url',
+                        $baseUrl,
+                        'string',
+                        'Custom base URL for link generation',
+                        $_SESSION['user_id']
+                    ]);
+                    
+                    if ($result) {
+                        $message = ['type' => 'success', 'message' => 'Base URL updated successfully!'];
+                    } else {
+                        $message = ['type' => 'error', 'message' => 'Failed to update base URL.'];
+                    }
+                }
+            } else {
+                // Empty = use auto-detection, delete setting
+                $sql = "DELETE FROM app_settings WHERE setting_key = ?";
+                $db->query($sql, ['base_url']);
+                $message = ['type' => 'success', 'message' => 'Base URL cleared. Using auto-detection.'];
+            }
+        } elseif ($_POST['action'] === 'create_user') {
             $isTemporary = isset($_POST['is_temporary']);
             $expiryDate = $isTemporary && !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null;
             $role = $_POST['role'] ?? 'user';
@@ -82,6 +122,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 $users = $userManager->getAllUsers();
 $accessCodes = $userManager->getAllAccessCodes();
 
+// Get current application settings
+$sql = "SELECT * FROM app_settings WHERE setting_key = ?";
+$baseUrlSetting = $db->fetch($sql, ['base_url']);
+$customBaseUrl = $baseUrlSetting ? $baseUrlSetting['setting_value'] : '';
+
+// Get auto-detected base URL for comparison
+$autoDetectedBaseUrl = getBaseUrl();
+
 $csrfToken = $auth->generateCSRFToken();
 ?>
 <!DOCTYPE html>
@@ -89,7 +137,7 @@ $csrfToken = $auth->generateCSRFToken();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo SITE_NAME; ?> - Admin Panel</title>
+    <title><?php echo SITE_NAME; ?> - Settings</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="simple-page">
@@ -102,8 +150,72 @@ $csrfToken = $auth->generateCSRFToken();
             </div>
         <?php endif; ?>
         
+        <!-- Application Settings Section -->
         <div class="card">
-            <h2>Create New User</h2>
+            <div class="card-header">
+                <h2>⚙️ Application Settings</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_base_url">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                    
+                    <div class="form-group">
+                        <label for="base_url">Base URL for Link Generation</label>
+                        <input type="url" 
+                               id="base_url" 
+                               name="base_url" 
+                               value="<?php echo htmlspecialchars($customBaseUrl); ?>"
+                               placeholder="https://example.com">
+                        <small style="display: block; margin-top: 0.5rem; color: var(--color-muted);">
+                            <strong>Current Mode:</strong> 
+                            <?php if (!empty($customBaseUrl)): ?>
+                                Custom URL: <code style="color: var(--color-secondary);"><?php echo htmlspecialchars($customBaseUrl); ?></code>
+                            <?php else: ?>
+                                Auto-Detection: <code style="color: var(--color-secondary);"><?php echo htmlspecialchars($autoDetectedBaseUrl); ?></code>
+                            <?php endif; ?>
+                        </small>
+                        <small style="display: block; margin-top: 0.25rem; color: var(--color-muted);">
+                            Set a custom base URL for share links and other generated URLs. Leave empty to use automatic detection based on HTTP headers (recommended for reverse proxy setups).
+                        </small>
+                        <small style="display: block; margin-top: 0.25rem; color: var(--color-gold);">
+                            💡 <strong>Tip:</strong> Use automatic detection if you're behind a reverse proxy with proper X-Forwarded-* headers configured.
+                        </small>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save Settings</button>
+                        <?php if (!empty($customBaseUrl)): ?>
+                            <button type="button" class="btn btn-secondary" onclick="clearBaseUrl()">Use Auto-Detection</button>
+                        <?php endif; ?>
+                    </div>
+                </form>
+                
+                <!-- Detection Info -->
+                <div class="hash-info" style="margin-top: 1.5rem;">
+                    <strong>🔍 Current Detection Info:</strong><br>
+                    <small>
+                        <strong>Protocol:</strong> <?php echo htmlspecialchars(getProtocol()); ?><br>
+                        <strong>Host:</strong> <?php echo htmlspecialchars(getHost()); ?><br>
+                        <strong>Auto-Detected URL:</strong> <?php echo htmlspecialchars($autoDetectedBaseUrl); ?><br>
+                        <strong>Active Base URL:</strong> <?php echo htmlspecialchars(getBaseUrl()); ?><br>
+                        <?php if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])): ?>
+                            <strong>Behind Proxy:</strong> Yes (X-Forwarded-Proto: <?php echo htmlspecialchars($_SERVER['HTTP_X_FORWARDED_PROTO']); ?>)<br>
+                        <?php endif; ?>
+                        <?php if (isset($_SERVER['HTTP_X_FORWARDED_HOST'])): ?>
+                            <strong>Forwarded Host:</strong> <?php echo htmlspecialchars($_SERVER['HTTP_X_FORWARDED_HOST']); ?><br>
+                        <?php endif; ?>
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- User Management Section -->
+        <div class="card">
+            <div class="card-header">
+                <h2>👥 Create New User</h2>
+            </div>
+            <div class="card-body">
             <form method="POST">
                 <input type="hidden" name="action" value="create_user">
                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
@@ -153,10 +265,14 @@ $csrfToken = $auth->generateCSRFToken();
                 
                 <button type="submit" class="btn">Create User</button>
             </form>
+            </div>
         </div>
         
         <div class="card">
-            <h2>Create Access Code</h2>
+            <div class="card-header">
+                <h2>🔑 Create Access Code</h2>
+            </div>
+            <div class="card-body">
             <form method="POST">
                 <input type="hidden" name="action" value="create_access_code">
                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
@@ -179,13 +295,18 @@ $csrfToken = $auth->generateCSRFToken();
                     </div>
                 </div>
                 
-                <button type="submit" class="btn">Generate Access Code</button>
+                <button type="submit" class="btn">Create Access Code</button>
             </form>
+            </div>
         </div>
         
         <div class="card">
-            <h2>Users</h2>
-            <table>
+            <div class="card-header">
+                <h2>👥 Manage Users</h2>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table>
                 <thead>
                     <tr>
                         <th>Username</th>
@@ -242,12 +363,18 @@ $csrfToken = $auth->generateCSRFToken();
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
-            </table>
+                    </table>
+                </div>
+            </div>
         </div>
         
         <div class="card">
-            <h2>Access Codes</h2>
-            <table>
+            <div class="card-header">
+                <h2>🔑 Manage Access Codes</h2>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table>
                 <thead>
                     <tr>
                         <th>Code</th>
@@ -295,7 +422,9 @@ $csrfToken = $auth->generateCSRFToken();
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
-            </table>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -304,6 +433,11 @@ $csrfToken = $auth->generateCSRFToken();
             const checkbox = document.getElementById('is_temporary');
             const expiryGroup = document.getElementById('expiry_date_group');
             expiryGroup.style.display = checkbox.checked ? 'flex' : 'none';
+        }
+        
+        function clearBaseUrl() {
+            document.getElementById('base_url').value = '';
+            document.getElementById('base_url').closest('form').submit();
         }
     </script>
     

@@ -836,13 +836,12 @@ input[type="file"]:hover {
 
 /* Container variations */
 .container {
-  max-width: 1200px;
   margin: var(--spacing-lg) auto;
   padding: 0 var(--spacing-md);
 }
 
 .container.admin-container {
-  max-width: 1400px;
+  max-width: 1600px;
 }
 
 /* Upload form */
