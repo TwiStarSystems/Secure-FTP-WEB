@@ -9,31 +9,34 @@
  * throughout the entire application.
  * 
  * Color Variables:
- * - --color-primary: Main brand color (purple)
- * - --color-secondary: Secondary brand color (light purple)
- * - --color-dark: Background color (dark blue)
- * - --color-accent: Accent color (blue)
- * - --color-danger: Error/danger color (red)
- * - --color-gold: Success/highlight color (gold)
- * - --color-text: Primary text color (light)
+ * - --color-twistar-purple: Main brand color (purple)
+ * - --color-sparkle-purple: Secondary brand color (light purple)
+ * - --color-midnight-blue: Background color (dark blue)
+ * - --color-royal-blue: Accent color (blue)
+ * - --color-wine-red: Error/danger color (red)
+ * - --color-pure-gold: Success/highlight color (gold)
+ * - --color-white: Primary text color (light)
  * - --color-muted: Secondary text color (semi-transparent)
  * - --color-border: Border color (semi-transparent purple)
  */
 
 :root {
-  --color-primary: #9600E1;
-  --color-secondary: #CC9CDF;
-  --color-dark: #000030;
-  --color-accent: #0000C8;
-  --color-danger: #C80000;
-  --color-gold: #FFD700;
-  --color-text: #f5f5ff;
+  --color-twistar-purple: #9600E1;
+  --color-sparkle-purple: #CC9CDF;
+  --color-midnight-blue: #000030;
+  --color-royal-blue: #0000C8;
+  --color-wine-red: #C80000;
+  --color-black: #000000;
+  --color-red: #FF0000;
+  --color-blue: #0000FF;
+  --color-pure-gold: #FFD700;
+  --color-white: #f5f5ff;
   --color-muted: #b9b9d695;
   --color-border: rgba(204, 156, 223, 0.35);
   
   /* Gradient combinations */
-  --gradient-primary: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
-  --gradient-secondary: linear-gradient(135deg, var(--color-dark) 0%, var(--color-primary) 100%);
+  --gradient-primary: linear-gradient(135deg, var(--color-twistar-purple) 0%, var(--color-royal-blue) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--color-midnight-blue) 0%, var(--color-twistar-purple) 100%);
   --gradient-subtle: linear-gradient(135deg, rgba(150, 0, 225, 0.1) 0%, rgba(0, 0, 200, 0.1) 100%);
   
   /* Shadows */
@@ -55,7 +58,6 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
 }
-
 /* Reset and Base Styles */
 * {
   box-sizing: border-box;
@@ -63,10 +65,10 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
-  background: var(--color-dark);
+  background: var(--color-midnight-blue);
   background-image: var(--gradient-secondary);
   background-attachment: fixed;
-  color: var(--color-text);
+  color: var(--color-white);
   min-height: 100vh;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -131,12 +133,12 @@ body {
 }
 
 .tab:hover {
-  color: var(--color-text);
+  color: var(--color-white);
 }
 
 .tab.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+  color: var(--color-twistar-purple);
+  border-bottom-color: var(--color-twistar-purple);
 }
 
 .tab-content {
@@ -167,7 +169,7 @@ body {
 label {
   display: block;
   margin-bottom: var(--spacing-xs);
-  color: var(--color-text);
+  color: var(--color-white);
   font-weight: 500;
   font-size: 0.9rem;
 }
@@ -184,7 +186,7 @@ textarea {
   padding: 0.75rem;
   background: rgba(0, 0, 48, 0.5);
   border: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
   font-size: 0.95rem;
   transition: all 0.3s ease;
 }
@@ -193,7 +195,7 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-twistar-purple);
   box-shadow: 0 0 0 3px rgba(150, 0, 225, 0.1);
 }
 
@@ -205,7 +207,7 @@ input::placeholder {
 .btn {
   padding: 0.75rem 1.5rem;
   background: var(--gradient-primary);
-  color: var(--color-text);
+  color: var(--color-white);
   border: none;
   font-size: 1rem;
   font-weight: 600;
@@ -237,12 +239,12 @@ input::placeholder {
 }
 
 .btn-secondary {
-  background: var(--color-secondary);
-  color: var(--color-dark);
+  background: var(--color-sparkle-purple);
+  color: var(--color-midnight-blue);
 }
 
 .btn-danger {
-  background: var(--color-danger);
+  background: var(--color-wine-red);
   color: white;
 }
 
@@ -258,7 +260,7 @@ input::placeholder {
   cursor: pointer;
   background: rgba(150, 0, 225, 0.3);
   border: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
   border-radius: var(--radius-sm);
   transition: all 0.2s ease;
   vertical-align: middle;
@@ -278,7 +280,7 @@ input::placeholder {
 
 /* Header */
 .header {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  background: linear-gradient(135deg, var(--color-twistar-purple) 0%, var(--color-royal-blue) 100%);
   padding: 0;
   margin-bottom: 0;
   display: flex;
@@ -410,13 +412,13 @@ input::placeholder {
   background: var(--gradient-subtle);
   border: 1px solid var(--color-border);
   padding: 0.5rem 1rem;
-  color: var(--color-text);
+  color: var(--color-white);
   font-weight: 500;
 }
 
 .user-role {
-  background: var(--color-gold);
-  color: var(--color-dark);
+  background: var(--color-pure-gold);
+  color: var(--color-midnight-blue);
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 700;
@@ -444,13 +446,13 @@ input::placeholder {
 }
 
 .card-header h2 {
-  color: var(--color-text);
+  color: var(--color-white);
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .card-body {
-  color: var(--color-text);
+  color: var(--color-white);
 }
 
 /* Quota Display */
@@ -480,15 +482,15 @@ input::placeholder {
 }
 
 .quota-bar-fill.warning {
-  background: linear-gradient(135deg, var(--color-gold) 0%, #ff8c00 100%);
+  background: linear-gradient(135deg, var(--color-pure-gold) 0%, #ff8c00 100%);
 }
 
 .quota-bar-fill.danger {
-  background: linear-gradient(135deg, var(--color-danger) 0%, #ff4444 100%);
+  background: linear-gradient(135deg, var(--color-wine-red) 0%, #ff4444 100%);
 }
 
 .quota-text {
-  color: var(--color-text);
+  color: var(--color-white);
   font-size: 0.9rem;
   margin-top: var(--spacing-xs);
 }
@@ -512,7 +514,7 @@ thead {
 th {
   padding: var(--spacing-sm);
   text-align: left;
-  color: var(--color-text);
+  color: var(--color-white);
   font-weight: 600;
   font-size: 0.9rem;
   text-transform: uppercase;
@@ -522,7 +524,7 @@ th {
 td {
   padding: var(--spacing-sm);
   border-bottom: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
 }
 
 tr:hover td {
@@ -550,7 +552,7 @@ tr:hover td {
 
 .alert-error {
   background: rgba(200, 0, 0, 0.1);
-  border-left-color: var(--color-danger);
+  border-left-color: var(--color-wine-red);
   color: #ff6b6b;
 }
 
@@ -562,13 +564,13 @@ tr:hover td {
 
 .alert-warning {
   background: rgba(255, 215, 0, 0.1);
-  border-left-color: var(--color-gold);
-  color: var(--color-gold);
+  border-left-color: var(--color-pure-gold);
+  color: var(--color-pure-gold);
 }
 
 .alert-info {
   background: rgba(0, 0, 200, 0.1);
-  border-left-color: var(--color-accent);
+  border-left-color: var(--color-royal-blue);
   color: #74c0fc;
 }
 
@@ -580,7 +582,7 @@ tr:hover td {
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
   word-break: break-all;
-  color: var(--color-secondary);
+  color: var(--color-sparkle-purple);
 }
 
 /* Grid Layout */
@@ -602,7 +604,7 @@ input[type="checkbox"],
 input[type="radio"] {
   width: auto;
   margin-right: var(--spacing-xs);
-  accent-color: var(--color-primary);
+  accent-color: var(--color-twistar-purple);
 }
 
 /* File Upload */
@@ -610,13 +612,13 @@ input[type="file"] {
   padding: var(--spacing-sm);
   background: rgba(0, 0, 48, 0.5);
   border: 2px dashed var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
 input[type="file"]:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-twistar-purple);
   background: rgba(150, 0, 225, 0.05);
 }
 
@@ -685,11 +687,11 @@ input[type="file"]:hover {
 }
 
 .text-primary {
-  color: var(--color-primary);
+  color: var(--color-twistar-purple);
 }
 
 .text-secondary {
-  color: var(--color-secondary);
+  color: var(--color-sparkle-purple);
 }
 
 .text-muted {
@@ -697,11 +699,11 @@ input[type="file"]:hover {
 }
 
 .text-danger {
-  color: var(--color-danger);
+  color: var(--color-wine-red);
 }
 
 .text-gold {
-  color: var(--color-gold);
+  color: var(--color-pure-gold);
 }
 
 .mt-1 { margin-top: var(--spacing-xs); }
@@ -750,17 +752,17 @@ input[type="file"]:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-primary);
+  background: var(--color-twistar-purple);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-secondary);
+  background: var(--color-sparkle-purple);
 }
 
 /* Loading Spinner */
 .spinner {
   border: 3px solid var(--color-border);
-  border-top: 3px solid var(--color-primary);
+  border-top: 3px solid var(--color-twistar-purple);
   width: 40px;
   height: 40px;
   animation: spin 1s linear infinite;
@@ -783,7 +785,7 @@ input[type="file"]:hover {
 }
 
 .badge-primary {
-  background: var(--color-primary);
+  background: var(--color-twistar-purple);
   color: white;
 }
 
@@ -793,17 +795,17 @@ input[type="file"]:hover {
 }
 
 .badge-danger {
-  background: var(--color-danger);
+  background: var(--color-wine-red);
   color: white;
 }
 
 .badge-warning {
-  background: var(--color-gold);
-  color: var(--color-dark);
+  background: var(--color-pure-gold);
+  color: var(--color-midnight-blue);
 }
 
 .badge-info {
-  background: var(--color-accent);
+  background: var(--color-royal-blue);
   color: white;
 }
 
@@ -822,7 +824,7 @@ input[type="file"]:hover {
 .nav-link {
   background: rgba(150, 0, 225, 0.2);
   border: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
   padding: 0.5rem 1rem;
   border-radius: var(--radius-md);
   text-decoration: none;
@@ -831,7 +833,7 @@ input[type="file"]:hover {
 
 .nav-link:hover {
   background: rgba(150, 0, 225, 0.35);
-  border-color: var(--color-primary);
+  border-color: var(--color-twistar-purple);
 }
 
 /* Container variations */
@@ -873,7 +875,7 @@ input[type="file"]:hover {
 .file-hash {
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
-  color: var(--color-secondary);
+  color: var(--color-sparkle-purple);
   word-break: break-all;
 }
 
@@ -892,7 +894,7 @@ input[type="file"]:hover {
 .admin-link {
   background: rgba(150, 0, 225, 0.2);
   border: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
   padding: 0.5rem 1rem;
   border-radius: var(--radius-md);
   text-decoration: none;
@@ -901,7 +903,7 @@ input[type="file"]:hover {
 
 .admin-link:hover {
   background: rgba(150, 0, 225, 0.35);
-  border-color: var(--color-primary);
+  border-color: var(--color-twistar-purple);
 }
 
 /* Hash info display */
@@ -911,7 +913,7 @@ input[type="file"]:hover {
   padding: var(--spacing-sm);
   border-radius: var(--radius-md);
   margin-top: var(--spacing-sm);
-  color: var(--color-text);
+  color: var(--color-white);
 }
 
 /* Code display */
@@ -921,7 +923,7 @@ input[type="file"]:hover {
   border: 1px solid var(--color-border);
   padding: var(--spacing-sm);
   border-radius: var(--radius-md);
-  color: var(--color-secondary);
+  color: var(--color-sparkle-purple);
 }
 
 /* Login page specific styles - Dark mode consistent */
@@ -939,7 +941,7 @@ input[type="file"]:hover {
 
 /* Body variant for centered layout (login page) */
 body.login-page {
-  background: var(--color-dark);
+  background: var(--color-midnight-blue);
   background-image: var(--gradient-secondary);
   background-attachment: fixed;
   min-height: 100vh;
@@ -952,7 +954,7 @@ body.login-page {
 /* Header variant for simple pages */
 .header.simple-gradient {
   /* Use same gradient as main header */
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  background: linear-gradient(135deg, var(--color-twistar-purple) 0%, var(--color-royal-blue) 100%);
   color: white;
   padding: 0 var(--spacing-lg);
   min-height: 60px;
@@ -971,7 +973,7 @@ body.simple-page {
 }
 
 .settings-section h3 {
-  color: var(--color-text);
+  color: var(--color-white);
   font-size: 1.2rem;
   margin-bottom: var(--spacing-md);
   padding-bottom: var(--spacing-sm);
@@ -1000,13 +1002,13 @@ body.simple-page {
 }
 
 .info-item span {
-  color: var(--color-text);
+  color: var(--color-white);
 }
 
 .alert-info {
   background: rgba(0, 0, 200, 0.1);
   border: 1px solid rgba(0, 0, 200, 0.3);
-  color: var(--color-text);
+  color: var(--color-white);
   padding: var(--spacing-md);
   margin-top: var(--spacing-md);
 }
@@ -1110,7 +1112,7 @@ body.simple-page {
 
 .file-card:hover {
   background: rgba(150, 0, 225, 0.15);
-  border-color: var(--color-primary);
+  border-color: var(--color-twistar-purple);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -1128,7 +1130,7 @@ body.simple-page {
 .file-card .file-name {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--color-white);
   margin-bottom: var(--spacing-xs);
   word-break: break-word;
 }
@@ -1166,7 +1168,7 @@ body.simple-page {
 }
 
 .empty-state h3 {
-  color: var(--color-text);
+  color: var(--color-white);
   margin-bottom: var(--spacing-sm);
 }
 
@@ -1179,11 +1181,11 @@ body.simple-page {
 .login-prompt-card {
   text-align: center;
   background: rgba(150, 0, 225, 0.15);
-  border: 1px dashed var(--color-primary);
+  border: 1px dashed var(--color-twistar-purple);
 }
 
 .login-prompt-card h3 {
-  color: var(--color-text);
+  color: var(--color-white);
   margin-bottom: var(--spacing-sm);
 }
 
@@ -1208,7 +1210,7 @@ body.simple-page {
   bottom: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  background: linear-gradient(135deg, var(--color-twistar-purple) 0%, var(--color-royal-blue) 100%);
   color: white;
   text-align: center;
   padding: 12px 20px;
@@ -1243,7 +1245,7 @@ body {
   padding: 0.5rem;
   background: rgba(0, 0, 48, 0.5);
   border: 1px solid var(--color-border);
-  color: var(--color-text);
+  color: var(--color-white);
   font-family: monospace;
   font-size: 0.9rem;
 }
@@ -1267,7 +1269,7 @@ body {
 }
 
 .file-info-card h3 {
-  color: var(--color-text);
+  color: var(--color-white);
   font-size: 1.25rem;
   margin-bottom: var(--spacing-md);
   word-break: break-word;
@@ -1294,7 +1296,7 @@ body {
 }
 
 .detail-row .value {
-  color: var(--color-text);
+  color: var(--color-white);
 }
 
 .detail-row .hash-value {
@@ -1323,7 +1325,7 @@ body {
 }
 
 .back-link a:hover {
-  color: var(--color-primary);
+  color: var(--color-twistar-purple);
 }
 
 /* My Shares Page */
