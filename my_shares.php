@@ -83,6 +83,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = ['type' => 'error', 'message' => $result['error']];
             }
         }
+        
+        // Update share expiry
+        elseif ($action === 'update_share_expiry' && isset($_POST['share_id'])) {
+            $expiryDate = !empty($_POST['expires_at']) ? $_POST['expires_at'] : null;
+            $result = $shareManager->updateShare($_POST['share_id'], $currentUser['id'], ['expires_at' => $expiryDate]);
+            
+            if ($result['success']) {
+                $message = ['type' => 'success', 'message' => 'Share expiry date updated successfully!'];
+            } else {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            }
+        }
+        
+        // Update file expiry
+        elseif ($action === 'update_file_expiry' && isset($_POST['file_id'])) {
+            $expiryDate = !empty($_POST['file_expiry_date']) ? $_POST['file_expiry_date'] : null;
+            $result = $fileManager->updateFileExpiry($_POST['file_id'], $expiryDate);
+            
+            if ($result['success']) {
+                $message = ['type' => 'success', 'message' => 'File expiry date updated successfully!'];
+            } else {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            }
+        }
     }
 }
 
@@ -181,7 +205,8 @@ $csrfToken = $auth->generateCSRFToken();
                             <th>Status</th>
                             <th>Downloads</th>
                             <th>Created</th>
-                            <th>Expires</th>
+                            <th>Share Expires</th>
+                            <th>File Expires</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -225,7 +250,22 @@ $csrfToken = $auth->generateCSRFToken();
                                 </td>
                                 <td><?php echo date('M j, Y', strtotime($share['created_at'])); ?></td>
                                 <td>
-                                    <?php echo $share['expires_at'] ? date('M j, Y H:i', strtotime($share['expires_at'])) : 'Never'; ?>
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <?php echo $share['expires_at'] ? date('M j, Y H:i', strtotime($share['expires_at'])) : 'Never'; ?>
+                                        <button type="button" onclick="showExpiryModal(<?php echo $share['id']; ?>, 'share', '<?php echo $share['expires_at'] ? date('Y-m-d\TH:i', strtotime($share['expires_at'])) : ''; ?>')" class="btn btn-mini" title="Edit share expiry">✏️</button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <?php 
+                                    // Get file expiry date
+                                    $fileSql = "SELECT file_expiry_date FROM files WHERE id = ?";
+                                    $fileExpiryData = $db->fetch($fileSql, [$share['file_id']]);
+                                    $fileExpiry = $fileExpiryData ? $fileExpiryData['file_expiry_date'] : null;
+                                    ?>
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <?php echo $fileExpiry ? date('M j, Y H:i', strtotime($fileExpiry)) : 'Never'; ?>
+                                        <button type="button" onclick="showExpiryModal(<?php echo $share['file_id']; ?>, 'file', '<?php echo $fileExpiry ? date('Y-m-d\TH:i', strtotime($fileExpiry)) : ''; ?>')" class="btn btn-mini" title="Edit file expiry">✏️</button>
+                                    </div>
                                 </td>
                                 <td class="actions">
                                     <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small" title="Copy link">
@@ -249,7 +289,77 @@ $csrfToken = $auth->generateCSRFToken();
         </div>
     </div>
     
+    <!-- Expiry Date Modal -->
+    <div id="expiryModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Set Expiry Date</h3>
+                <button type="button" onclick="closeExpiryModal()" class="btn-close">&times;</button>
+            </div>
+            <form method="POST" id="expiryForm">
+                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                <input type="hidden" name="action" id="modalAction" value="">
+                <input type="hidden" name="share_id" id="modalShareId" value="">
+                <input type="hidden" name="file_id" id="modalFileId" value="">
+                
+                <div class="form-group">
+                    <label id="modalLabel">Expiry Date (leave empty for never)</label>
+                    <input type="datetime-local" id="modalExpiryDate" name="expires_at">
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" onclick="closeExpiryModal()" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
     <script>
+        function showExpiryModal(id, type, currentValue) {
+            const modal = document.getElementById('expiryModal');
+            const title = document.getElementById('modalTitle');
+            const label = document.getElementById('modalLabel');
+            const action = document.getElementById('modalAction');
+            const shareIdInput = document.getElementById('modalShareId');
+            const fileIdInput = document.getElementById('modalFileId');
+            const expiryInput = document.getElementById('modalExpiryDate');
+            const form = document.getElementById('expiryForm');
+            
+            // Reset form
+            shareIdInput.value = '';
+            fileIdInput.value = '';
+            
+            if (type === 'share') {
+                title.textContent = 'Set Share Expiry Date';
+                label.textContent = 'Share expires on (leave empty to never expire)';
+                action.value = 'update_share_expiry';
+                shareIdInput.value = id;
+                expiryInput.name = 'expires_at';
+            } else {
+                title.textContent = 'Set File Auto-Delete Date';
+                label.textContent = 'File will be automatically deleted on (leave empty to keep forever)';
+                action.value = 'update_file_expiry';
+                fileIdInput.value = id;
+                expiryInput.name = 'file_expiry_date';
+            }
+            
+            expiryInput.value = currentValue;
+            modal.style.display = 'flex';
+        }
+        
+        function closeExpiryModal() {
+            document.getElementById('expiryModal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('expiryModal');
+            if (event.target === modal) {
+                closeExpiryModal();
+            }
+        }
+        
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(function() {
                 alert('Link copied to clipboard!');

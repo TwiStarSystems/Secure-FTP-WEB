@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS files (
     uploaded_by_code INT NULL,
     upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     download_count INT DEFAULT 0,
+    file_expiry_date DATETIME NULL,
     FOREIGN KEY (uploaded_by_user) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (uploaded_by_code) REFERENCES access_codes(id) ON DELETE CASCADE
 );

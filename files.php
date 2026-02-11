@@ -273,6 +273,36 @@ class FileManager {
         return ['success' => true];
     }
     
+    /**
+     * Update file expiry date (auto-delete date)
+     */
+    public function updateFileExpiry($fileId, $expiryDate = null) {
+        // Get file to check ownership
+        $sql = "SELECT * FROM files WHERE id = ?";
+        $file = $this->db->fetch($sql, [$fileId]);
+        
+        if (!$file) {
+            return ['success' => false, 'error' => 'File not found.'];
+        }
+        
+        // Get current user
+        $currentUser = $this->auth->getCurrentUser();
+        
+        // Check permissions using RBAC
+        if (!RBAC::canDeleteFile($file, $currentUser)) {
+            return ['success' => false, 'error' => 'Permission denied.'];
+        }
+        
+        $sql = "UPDATE files SET file_expiry_date = ? WHERE id = ?";
+        $result = $this->db->query($sql, [empty($expiryDate) ? null : $expiryDate, $fileId]);
+        
+        if ($result) {
+            return ['success' => true];
+        }
+        
+        return ['success' => false, 'error' => 'Failed to update file expiry date.'];
+    }
+    
     // Format bytes to human readable
     public function formatBytes($bytes, $precision = 2) {
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];

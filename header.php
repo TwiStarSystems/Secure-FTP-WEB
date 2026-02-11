@@ -29,7 +29,7 @@ $headerIsAdmin = RBAC::isAdmin();
                 
                 <?php if ($headerIsAdmin): ?>
                     <!-- Settings / Admin Panel - admin only -->
-                    <a href="admin.php" class="header-btn" title="Settings">
+                    <a href="settings.php" class="header-btn" title="Settings">
                         <span class="icon">⚙️</span> Settings
                     </a>
                 <?php endif; ?>

@@ -2,12 +2,12 @@
 
 ## Overview
 
-The Settings page (formerly Admin Panel) now includes an Application Settings section where administrators can configure global application settings, including a custom base URL for link generation.
+The Settings page includes an Application Settings section where administrators can configure global application settings, including a custom base URL for link generation.
 
 ## Accessing Settings
 
 1. Log in as an administrator
-2. Click the **⚙️ Settings** button in the header (formerly "Admin")
+2. Click the **⚙️ Settings** button in the header
 3. The first section shows **Application Settings**
 
 ## Base URL Configuration
@@ -136,7 +136,7 @@ After saving your base URL configuration:
 2. Check the Detection Info panel for what headers are being received
 3. Test with curl to see headers:
    ```bash
-   curl -I https://yourdomain.com/admin.php
+   curl -I https://yourdomain.com/settings.php
    ```
 4. Fall back to custom base URL as a workaround
 

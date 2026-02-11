@@ -77,6 +77,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Handle unshare (delete active share)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'unshare') {
+    // Verify CSRF token
+    if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
+        $uploadMessage = ['type' => 'error', 'message' => 'Invalid request.'];
+    } elseif (isset($_POST['file_id'])) {
+        $currentUser = $auth->getCurrentUser();
+        $result = $shareManager->deleteFileShares($_POST['file_id'], $currentUser['id']);
+        if ($result['success']) {
+            $uploadMessage = ['type' => 'success', 'message' => 'File unshared successfully!'];
+        } else {
+            $uploadMessage = ['type' => 'error', 'message' => $result['error']];
+        }
+    }
+}
+
 // Get current user info
 $currentUser = $auth->getCurrentUser();
 $currentAccessCode = $auth->getCurrentAccessCode();
@@ -84,6 +100,24 @@ $isAdmin = RBAC::isAdmin();
 
 // Get files
 $files = $fileManager->getFiles();
+
+// Get active shares for each file to show correct button
+$fileShares = [];
+if ($currentUser) {
+    foreach ($files as $file) {
+        $shares = $shareManager->getFileShares($file['id']);
+        $activeShare = null;
+        foreach ($shares as $share) {
+            if ($share['is_active'] && 
+                (!$share['expires_at'] || strtotime($share['expires_at']) > time()) &&
+                ($share['max_downloads'] === null || $share['download_count'] < $share['max_downloads'])) {
+                $activeShare = $share;
+                break;
+            }
+        }
+        $fileShares[$file['id']] = $activeShare;
+    }
+}
 
 // Calculate quota info
 if ($currentUser) {
@@ -206,12 +240,21 @@ $csrfToken = $auth->generateCSRFToken();
                                 <td class="actions">
                                     <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
                                     <?php if ($currentUser && RBAC::canShareFile($file, $currentUser)): ?>
-                                        <form method="POST" style="display: inline;">
-                                            <input type="hidden" name="action" value="quick_share">
-                                            <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                            <button type="submit" class="btn btn-small btn-share" title="Create share link">Share</button>
-                                        </form>
+                                        <?php if (isset($fileShares[$file['id']]) && $fileShares[$file['id']]): ?>
+                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove all share links for this file?')">
+                                                <input type="hidden" name="action" value="unshare">
+                                                <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
+                                                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                <button type="submit" class="btn btn-small btn-warning" title="Remove share links">Unshare</button>
+                                            </form>
+                                        <?php else: ?>
+                                            <form method="POST" style="display: inline;">
+                                                <input type="hidden" name="action" value="quick_share">
+                                                <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
+                                                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                <button type="submit" class="btn btn-small btn-share" title="Create share link">Share</button>
+                                            </form>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                     <?php if ($currentUser && RBAC::canDeleteFile($file, $currentUser)): ?>
                                         <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">

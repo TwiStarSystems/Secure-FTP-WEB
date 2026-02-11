@@ -226,6 +226,33 @@ class ShareManager {
     }
     
     /**
+     * Delete all shares for a file
+     */
+    public function deleteFileShares($fileId, $userId = null) {
+        // Get file to check ownership
+        $sql = "SELECT * FROM files WHERE id = ?";
+        $file = $this->db->fetch($sql, [$fileId]);
+        
+        if (!$file) {
+            return ['success' => false, 'error' => 'File not found.'];
+        }
+        
+        // Check permissions
+        if (!RBAC::isAdmin() && $file['uploaded_by_user'] !== $userId) {
+            return ['success' => false, 'error' => 'Permission denied.'];
+        }
+        
+        $sql = "DELETE FROM shared_files WHERE file_id = ?";
+        $result = $this->db->query($sql, [$fileId]);
+        
+        if ($result !== false) {
+            return ['success' => true];
+        }
+        
+        return ['success' => false, 'error' => 'Failed to delete shares.'];
+    }
+    
+    /**
      * Deactivate a share (soft delete)
      */
     public function deactivateShare($shareId, $userId = null) {

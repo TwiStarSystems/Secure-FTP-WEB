@@ -17,7 +17,7 @@ $required_files = [
     'files.php',
     'login.php',
     'index.php',
-    'admin.php',
+    'settings.php',
     'download.php',
     'database.sql',
     'uploads/.htaccess'

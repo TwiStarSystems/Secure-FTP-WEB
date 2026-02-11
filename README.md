@@ -293,7 +293,7 @@ define('DEFAULT_HASH_ALGORITHM', 'sha256');
 
 ```
 Secure-FTP-WEB/
-├── admin.php           # Admin panel interface
+├── settings.php        # Settings panel (user & admin)
 ├── auth.php            # Authentication and rate limiting
 ├── config.php          # Configuration settings
 ├── database.sql        # Database schema

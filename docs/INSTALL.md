@@ -405,9 +405,8 @@ sudo ufw enable
    - Password: `admin123`
 
 3. **IMMEDIATELY** change the admin password:
-   - Go to Admin Panel
-   - Click on the admin user
-   - Update password
+   - Go to Settings page (⚙️ Settings button in header)
+   - Use the "Change Password" section
    - Or use MySQL:
    ```sql
    UPDATE users SET password_hash = '$2y$10$NEW_HASH_HERE' WHERE username = 'admin';
