@@ -70,6 +70,7 @@ if (
     && in_array($_POST['action'], [
         'update_base_url',
         'update_smtp_settings',
+        'update_security_thresholds',
         'send_test_smtp_email',
         'export_security_events',
         'create_user',
@@ -192,6 +193,66 @@ if (
                 } else {
                     $message = ['type' => 'error', 'message' => 'Failed to save SMTP settings.'];
                 }
+            }
+        } elseif ($_POST['action'] === 'update_security_thresholds') {
+            $appSettings = new AppSettingsManager($db);
+
+            $thresholdDefinitions = [
+                'security_max_download_requests_window' => ['min' => 1, 'max' => 10000, 'label' => 'Max download requests per window'],
+                'security_download_request_window_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Download request window seconds'],
+                'security_download_request_lockout_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Download request lockout seconds'],
+
+                'security_max_download_failure_attempts' => ['min' => 1, 'max' => 10000, 'label' => 'Max download failure attempts'],
+                'security_download_failure_window_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Download failure window seconds'],
+                'security_download_failure_lockout_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Download failure lockout seconds'],
+
+                'security_max_share_token_failure_attempts' => ['min' => 1, 'max' => 10000, 'label' => 'Max share token failure attempts'],
+                'security_share_token_failure_window_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Share token failure window seconds'],
+                'security_share_token_failure_lockout_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Share token failure lockout seconds'],
+
+                'security_max_share_password_failure_attempts' => ['min' => 1, 'max' => 10000, 'label' => 'Max share password failure attempts'],
+                'security_share_password_failure_window_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Share password failure window seconds'],
+                'security_share_password_failure_lockout_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Share password failure lockout seconds'],
+
+                'security_max_share_requests_window' => ['min' => 1, 'max' => 10000, 'label' => 'Max share requests per window'],
+                'security_share_request_window_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Share request window seconds'],
+                'security_share_request_lockout_seconds' => ['min' => 1, 'max' => 86400, 'label' => 'Share request lockout seconds']
+            ];
+
+            $allSaved = true;
+            foreach ($thresholdDefinitions as $key => $definition) {
+                $rawValue = $_POST[$key] ?? null;
+                if (!is_numeric($rawValue)) {
+                    $message = ['type' => 'error', 'message' => 'Invalid numeric value for: ' . $definition['label']];
+                    $allSaved = false;
+                    break;
+                }
+
+                $value = intval($rawValue);
+                if ($value < $definition['min'] || $value > $definition['max']) {
+                    $message = ['type' => 'error', 'message' => $definition['label'] . ' must be between ' . $definition['min'] . ' and ' . $definition['max'] . '.'];
+                    $allSaved = false;
+                    break;
+                }
+
+                $saved = $appSettings->set(
+                    $key,
+                    (string)$value,
+                    'integer',
+                    'Security threshold setting',
+                    $_SESSION['user_id']
+                );
+
+                if (!$saved) {
+                    $allSaved = false;
+                    break;
+                }
+            }
+
+            if ($allSaved) {
+                $message = ['type' => 'success', 'message' => 'Security threshold settings updated successfully!'];
+            } elseif (!$message) {
+                $message = ['type' => 'error', 'message' => 'Failed to save security threshold settings.'];
             }
         } elseif ($_POST['action'] === 'send_test_smtp_email') {
             $testRecipientEmail = trim($_POST['test_recipient_email'] ?? '');
@@ -392,6 +453,23 @@ $mfaMethods = ['totp' => false, 'email' => false];
 $totpProvisioningUri = '';
 $securityEvents = [];
 $securityEventTypes = [];
+$securityThresholdSettings = [
+    'max_download_requests_window' => MAX_DOWNLOAD_REQUESTS_WINDOW,
+    'download_request_window_seconds' => DOWNLOAD_REQUEST_WINDOW_SECONDS,
+    'download_request_lockout_seconds' => DOWNLOAD_REQUEST_LOCKOUT_SECONDS,
+    'max_download_failure_attempts' => MAX_DOWNLOAD_FAILURE_ATTEMPTS,
+    'download_failure_window_seconds' => DOWNLOAD_FAILURE_WINDOW_SECONDS,
+    'download_failure_lockout_seconds' => DOWNLOAD_FAILURE_LOCKOUT_SECONDS,
+    'max_share_token_failure_attempts' => MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
+    'share_token_failure_window_seconds' => SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
+    'share_token_failure_lockout_seconds' => SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS,
+    'max_share_password_failure_attempts' => MAX_SHARE_PASSWORD_FAILURE_ATTEMPTS,
+    'share_password_failure_window_seconds' => SHARE_PASSWORD_FAILURE_WINDOW_SECONDS,
+    'share_password_failure_lockout_seconds' => SHARE_PASSWORD_FAILURE_LOCKOUT_SECONDS,
+    'max_share_requests_window' => MAX_SHARE_REQUESTS_WINDOW,
+    'share_request_window_seconds' => SHARE_REQUEST_WINDOW_SECONDS,
+    'share_request_lockout_seconds' => SHARE_REQUEST_LOCKOUT_SECONDS
+];
 $securityEventFilters = [
     'severity' => '',
     'event_type' => '',
@@ -426,6 +504,7 @@ if ($isAdmin) {
     $appSettings = new AppSettingsManager($db);
     $smtpSettings = $appSettings->getSmtpSettings();
     $hasSmtpPassword = !empty($smtpSettings['password']);
+    $securityThresholdSettings = $appSettings->getSecurityThresholds();
 
     $securityEventFilters = normalizeSecurityEventFilters($_GET);
     $securityEventTypes = $securityMonitor->getDistinctEventTypes(500);
@@ -737,6 +816,93 @@ $csrfToken = $auth->generateCSRFToken();
 
                     <div class="btn-row">
                         <button type="submit" class="btn btn-secondary">Send Test Email</button>
+                    </div>
+                </form>
+
+                <hr style="border-color: var(--color-border); margin: 2rem 0;">
+
+                <h3>Security Thresholds (Brute-Force Protection)</h3>
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_security_thresholds">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="security_max_download_requests_window">Max Download Requests / Window</label>
+                            <input type="number" id="security_max_download_requests_window" name="security_max_download_requests_window" min="1" max="10000" value="<?php echo intval($securityThresholdSettings['max_download_requests_window']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_download_request_window_seconds">Download Request Window (seconds)</label>
+                            <input type="number" id="security_download_request_window_seconds" name="security_download_request_window_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['download_request_window_seconds']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_download_request_lockout_seconds">Download Request Lockout (seconds)</label>
+                            <input type="number" id="security_download_request_lockout_seconds" name="security_download_request_lockout_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['download_request_lockout_seconds']); ?>" required>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="security_max_download_failure_attempts">Max Download Failure Attempts</label>
+                            <input type="number" id="security_max_download_failure_attempts" name="security_max_download_failure_attempts" min="1" max="10000" value="<?php echo intval($securityThresholdSettings['max_download_failure_attempts']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_download_failure_window_seconds">Download Failure Window (seconds)</label>
+                            <input type="number" id="security_download_failure_window_seconds" name="security_download_failure_window_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['download_failure_window_seconds']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_download_failure_lockout_seconds">Download Failure Lockout (seconds)</label>
+                            <input type="number" id="security_download_failure_lockout_seconds" name="security_download_failure_lockout_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['download_failure_lockout_seconds']); ?>" required>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="security_max_share_requests_window">Max Share Requests / Window</label>
+                            <input type="number" id="security_max_share_requests_window" name="security_max_share_requests_window" min="1" max="10000" value="<?php echo intval($securityThresholdSettings['max_share_requests_window']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_share_request_window_seconds">Share Request Window (seconds)</label>
+                            <input type="number" id="security_share_request_window_seconds" name="security_share_request_window_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['share_request_window_seconds']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_share_request_lockout_seconds">Share Request Lockout (seconds)</label>
+                            <input type="number" id="security_share_request_lockout_seconds" name="security_share_request_lockout_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['share_request_lockout_seconds']); ?>" required>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="security_max_share_token_failure_attempts">Max Share Token Failure Attempts</label>
+                            <input type="number" id="security_max_share_token_failure_attempts" name="security_max_share_token_failure_attempts" min="1" max="10000" value="<?php echo intval($securityThresholdSettings['max_share_token_failure_attempts']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_share_token_failure_window_seconds">Share Token Failure Window (seconds)</label>
+                            <input type="number" id="security_share_token_failure_window_seconds" name="security_share_token_failure_window_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['share_token_failure_window_seconds']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_share_token_failure_lockout_seconds">Share Token Failure Lockout (seconds)</label>
+                            <input type="number" id="security_share_token_failure_lockout_seconds" name="security_share_token_failure_lockout_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['share_token_failure_lockout_seconds']); ?>" required>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="security_max_share_password_failure_attempts">Max Share Password Failure Attempts</label>
+                            <input type="number" id="security_max_share_password_failure_attempts" name="security_max_share_password_failure_attempts" min="1" max="10000" value="<?php echo intval($securityThresholdSettings['max_share_password_failure_attempts']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_share_password_failure_window_seconds">Share Password Failure Window (seconds)</label>
+                            <input type="number" id="security_share_password_failure_window_seconds" name="security_share_password_failure_window_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['share_password_failure_window_seconds']); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="security_share_password_failure_lockout_seconds">Share Password Failure Lockout (seconds)</label>
+                            <input type="number" id="security_share_password_failure_lockout_seconds" name="security_share_password_failure_lockout_seconds" min="1" max="86400" value="<?php echo intval($securityThresholdSettings['share_password_failure_lockout_seconds']); ?>" required>
+                        </div>
+                    </div>
+
+                    <div class="btn-row">
+                        <button type="submit" class="btn btn-primary">Save Security Thresholds</button>
                     </div>
                 </form>
                 

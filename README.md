@@ -185,13 +185,18 @@ The automated installer (`install.sh`) performs a complete system setup:
 - ✅ Generates installation credentials file
 - ✅ Displays access URL and credentials
 
-#### Update Mode
-The installer also supports update mode (`./install.sh --update`):
-- Updates application files while preserving:
-  - Database and all existing data
-  - Uploaded files
-  - Configuration settings
-  - User accounts and permissions
+#### Installer Modes
+The installer supports three modes:
+
+- **Fresh Install**: `./install.sh` or `./install.sh --fresh`
+   - Performs a full clean installation
+- **Update**: `./install.sh --update`
+   - Updates application files
+   - Preserves uploads and configuration
+   - Runs safe, idempotent database migrations for new tables/settings
+- **Uninstall**: `./install.sh --uninstall`
+   - Removes application files and Nginx site configuration
+   - Optionally removes database and database user (with extra confirmation)
 
 **Installation time**: ~5-10 minutes (depending on server speed and options selected)
 

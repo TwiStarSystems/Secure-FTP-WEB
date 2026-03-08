@@ -1,13 +1,25 @@
 <?php
 // Security monitoring utilities for abuse prevention and audit logging
 require_once 'db.php';
+require_once 'app_settings.php';
 
 class SecurityMonitor {
     private $db;
+    private $settingsManager;
+    private $thresholdConfig = null;
 
     public function __construct($db) {
         $this->db = $db;
+        $this->settingsManager = new AppSettingsManager($db);
         $this->ensureSchema();
+    }
+
+    public function getThresholdConfig() {
+        if ($this->thresholdConfig === null) {
+            $this->thresholdConfig = $this->settingsManager->getSecurityThresholds();
+        }
+
+        return $this->thresholdConfig;
     }
 
     public function getClientIp() {

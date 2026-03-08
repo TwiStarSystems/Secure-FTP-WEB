@@ -32,6 +32,21 @@ After installation, the script will display:
 
 **Important:** Save the credentials and delete `installation_credentials.txt` after noting them.
 
+### Installer Modes
+
+```bash
+# Fresh install (default)
+sudo ./install.sh
+# or
+sudo ./install.sh --fresh
+
+# Update existing install (preserve data + run DB migrations)
+sudo ./install.sh --update
+
+# Uninstall application (optional DB/user removal)
+sudo ./install.sh --uninstall
+```
+
 ---
 
 ## Manual Installation

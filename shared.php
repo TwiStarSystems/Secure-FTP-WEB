@@ -12,6 +12,7 @@ $db = new Database();
 $shareManager = new ShareManager($db);
 $securityMonitor = new SecurityMonitor($db);
 $securityMonitor->cleanupOldData();
+$securityThresholds = $securityMonitor->getThresholdConfig();
 
 $clientIp = $securityMonitor->getClientIp();
 $baseIdentifier = 'share:' . $clientIp;
@@ -19,9 +20,9 @@ $baseIdentifier = 'share:' . $clientIp;
 $shareRequestRate = $securityMonitor->registerRequest(
     'share_request',
     $baseIdentifier,
-    MAX_SHARE_REQUESTS_WINDOW,
-    SHARE_REQUEST_WINDOW_SECONDS,
-    SHARE_REQUEST_LOCKOUT_SECONDS
+    $securityThresholds['max_share_requests_window'],
+    $securityThresholds['share_request_window_seconds'],
+    $securityThresholds['share_request_lockout_seconds']
 );
 
 if (!$shareRequestRate['allowed']) {
@@ -48,9 +49,9 @@ if (!$token) {
     $securityMonitor->registerFailure(
         'share_token_failure',
         $baseIdentifier,
-        MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
-        SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
-        SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS
+        $securityThresholds['max_share_token_failure_attempts'],
+        $securityThresholds['share_token_failure_window_seconds'],
+        $securityThresholds['share_token_failure_lockout_seconds']
     );
     $securityMonitor->logEvent('share_missing_token', 'warning', null, $baseIdentifier, []);
     die('Invalid share link.');
@@ -60,9 +61,9 @@ if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
     $lockState = $securityMonitor->registerFailure(
         'share_token_failure',
         $baseIdentifier,
-        MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
-        SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
-        SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS
+        $securityThresholds['max_share_token_failure_attempts'],
+        $securityThresholds['share_token_failure_window_seconds'],
+        $securityThresholds['share_token_failure_lockout_seconds']
     );
     $securityMonitor->logEvent('share_invalid_token_format', 'warning', null, $baseIdentifier, [
         'token_prefix' => substr($token, 0, 12),
@@ -95,9 +96,9 @@ if (!$share) {
     $lockState = $securityMonitor->registerFailure(
         'share_token_failure',
         $baseIdentifier,
-        MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
-        SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
-        SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS
+        $securityThresholds['max_share_token_failure_attempts'],
+        $securityThresholds['share_token_failure_window_seconds'],
+        $securityThresholds['share_token_failure_lockout_seconds']
     );
     $securityMonitor->logEvent('share_token_not_found', 'warning', null, $tokenIdentifier, [
         'token_prefix' => substr($token, 0, 16),
@@ -175,9 +176,9 @@ if (!$validation['valid']) {
         $lockState = $securityMonitor->registerFailure(
             'share_password_failure',
             $tokenIdentifier,
-            MAX_SHARE_PASSWORD_FAILURE_ATTEMPTS,
-            SHARE_PASSWORD_FAILURE_WINDOW_SECONDS,
-            SHARE_PASSWORD_FAILURE_LOCKOUT_SECONDS
+            $securityThresholds['max_share_password_failure_attempts'],
+            $securityThresholds['share_password_failure_window_seconds'],
+            $securityThresholds['share_password_failure_lockout_seconds']
         );
 
         $securityMonitor->logEvent('share_password_failed', 'warning', null, $tokenIdentifier, [
@@ -224,9 +225,9 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
     $downloadRequestRate = $securityMonitor->registerRequest(
         'share_download_request',
         $tokenIdentifier,
-        MAX_DOWNLOAD_REQUESTS_WINDOW,
-        DOWNLOAD_REQUEST_WINDOW_SECONDS,
-        DOWNLOAD_REQUEST_LOCKOUT_SECONDS
+        $securityThresholds['max_download_requests_window'],
+        $securityThresholds['download_request_window_seconds'],
+        $securityThresholds['download_request_lockout_seconds']
     );
 
     if (!$downloadRequestRate['allowed']) {

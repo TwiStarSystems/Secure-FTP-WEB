@@ -2,14 +2,33 @@
 
 # Secure FTP Web Application - Automated Installation Script for Debian/Ubuntu
 # This script installs and configures Nginx, PHP, MySQL/MariaDB, and the application
-# Usage: ./install.sh [--update]
-#   --update: Update application files without modifying database or uploads
+# Usage: ./install.sh [--fresh|--update|--uninstall]
+#   --fresh:     Full clean installation (default mode)
+#   --update:    Update application files and run safe DB migrations
+#   --uninstall: Remove application and optionally remove database/user
 
 set -e  # Exit on error
 
-# Check if running in update mode
+# Installer mode
+INSTALL_MODE="fresh"
+case "$1" in
+    ""|"--fresh")
+        INSTALL_MODE="fresh"
+        ;;
+    "--update")
+        INSTALL_MODE="update"
+        ;;
+    "--uninstall")
+        INSTALL_MODE="uninstall"
+        ;;
+    *)
+        echo "Usage: $0 [--fresh|--update|--uninstall]"
+        exit 1
+        ;;
+esac
+
 UPDATE_MODE=false
-if [ "$1" = "--update" ]; then
+if [ "$INSTALL_MODE" = "update" ]; then
     UPDATE_MODE=true
 fi
 
@@ -86,6 +105,187 @@ prompt_input() {
     fi
 }
 
+# Extract a PHP define value from config.php
+extract_php_define() {
+    local file_path="$1"
+    local define_name="$2"
+
+    if [ ! -f "$file_path" ]; then
+        echo ""
+        return 0
+    fi
+
+    sed -n "s/.*define('${define_name}', '\([^']*\)'.*/\1/p" "$file_path" | head -n1
+}
+
+# Run safe, idempotent DB migrations for update mode
+run_update_db_migrations() {
+    local app_dir="$1"
+    local config_file="${app_dir}/config.php"
+
+    if [ ! -f "$config_file" ]; then
+        print_warning "config.php not found; skipping DB migrations."
+        return 0
+    fi
+
+    local db_host
+    local db_name
+    local db_user
+    local db_pass
+
+    db_host=$(extract_php_define "$config_file" "DB_HOST")
+    db_name=$(extract_php_define "$config_file" "DB_NAME")
+    db_user=$(extract_php_define "$config_file" "DB_USER")
+    db_pass=$(extract_php_define "$config_file" "DB_PASS")
+
+    if [ -z "$db_host" ] || [ -z "$db_name" ] || [ -z "$db_user" ]; then
+        print_warning "Could not parse DB credentials from config.php; skipping DB migrations."
+        return 0
+    fi
+
+    print_header "UPDATE: Database Migrations"
+    print_message "Applying idempotent database migrations..."
+
+    local mysql_args
+    mysql_args=( -h "$db_host" -u "$db_user" "$db_name" )
+    if [ -n "$db_pass" ]; then
+        mysql_args+=( -p"$db_pass" )
+    fi
+
+    mysql "${mysql_args[@]}" <<'SQL'
+CREATE TABLE IF NOT EXISTS app_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT,
+    setting_type ENUM('string', 'integer', 'boolean', 'json') DEFAULT 'string',
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by INT,
+    INDEX idx_setting_key (setting_key)
+);
+
+CREATE TABLE IF NOT EXISTS user_mfa_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE,
+    totp_enabled BOOLEAN DEFAULT FALSE,
+    totp_secret TEXT NULL,
+    email_enabled BOOLEAN DEFAULT FALSE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_mfa_user (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS mfa_email_codes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    code_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_mfa_code_user (user_id),
+    INDEX idx_mfa_code_expires (expires_at)
+);
+
+CREATE TABLE IF NOT EXISTS abuse_counters (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    action_type VARCHAR(64) NOT NULL,
+    identifier VARCHAR(191) NOT NULL,
+    attempt_count INT DEFAULT 0,
+    first_attempt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_attempt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    lockout_until DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_action_identifier (action_type, identifier),
+    INDEX idx_lockout_until (lockout_until),
+    INDEX idx_last_attempt (last_attempt)
+);
+
+CREATE TABLE IF NOT EXISTS security_audit_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    severity ENUM('info', 'warning', 'critical') DEFAULT 'info',
+    user_id INT NULL,
+    ip_address VARCHAR(64) NOT NULL,
+    identifier VARCHAR(191) DEFAULT '',
+    context_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_event_type (event_type),
+    INDEX idx_created_at (created_at),
+    INDEX idx_ip_address (ip_address)
+);
+SQL
+
+    print_message "Database migrations completed."
+}
+
+run_uninstall() {
+    print_header "UNINSTALL MODE"
+
+    local app_dir
+    app_dir=$(prompt_input "Enter application installation path" "/var/www/html/secure-ftp")
+
+    local nginx_conf="/etc/nginx/sites-available/secure-ftp.conf"
+    local nginx_enabled="/etc/nginx/sites-enabled/secure-ftp.conf"
+    local config_file="${app_dir}/config.php"
+    local db_host=""
+    local db_name=""
+    local db_user=""
+
+    if [ -f "$config_file" ]; then
+        db_host=$(extract_php_define "$config_file" "DB_HOST")
+        db_name=$(extract_php_define "$config_file" "DB_NAME")
+        db_user=$(extract_php_define "$config_file" "DB_USER")
+    fi
+
+    print_warning "This will remove application files and Nginx site configuration."
+    if ! prompt_yes_no "Proceed with uninstall?" "n"; then
+        print_message "Uninstall cancelled by user."
+        exit 0
+    fi
+
+    if [ -L "$nginx_enabled" ] || [ -f "$nginx_enabled" ]; then
+        rm -f "$nginx_enabled"
+        print_message "Removed Nginx enabled site link."
+    fi
+
+    if [ -f "$nginx_conf" ]; then
+        rm -f "$nginx_conf"
+        print_message "Removed Nginx site config."
+    fi
+
+    if [ -d "$app_dir" ]; then
+        rm -rf "$app_dir"
+        print_message "Removed application directory: $app_dir"
+    else
+        print_warning "Application directory not found: $app_dir"
+    fi
+
+    if prompt_yes_no "Also remove database and DB user?" "n"; then
+        if [ -z "$db_name" ]; then
+            db_name=$(prompt_input "Database name to drop" "secure_ftp")
+        fi
+        if [ -z "$db_user" ]; then
+            db_user=$(prompt_input "Database user to drop" "secure_ftp_user")
+        fi
+
+        print_warning "This will permanently delete database '${db_name}' and user '${db_user}'."
+        if prompt_yes_no "Confirm destructive DB removal?" "n"; then
+            mysql -e "DROP DATABASE IF EXISTS ${db_name};" 2>/dev/null || true
+            mysql -e "DROP USER IF EXISTS '${db_user}'@'localhost';" 2>/dev/null || true
+            mysql -e "DROP USER IF EXISTS '${db_user}'@'%';" 2>/dev/null || true
+            mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+            print_message "Database and DB user removal attempted."
+        else
+            print_message "Skipped database removal."
+        fi
+    fi
+
+    systemctl reload nginx 2>/dev/null || true
+    print_message "Uninstall complete."
+    exit 0
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
     print_error "Please run this script as root or with sudo"
@@ -103,7 +303,7 @@ fi
 # Welcome banner
 clear
 echo -e "${CYAN}"
-if [ "$UPDATE_MODE" = true ]; then
+if [ "$INSTALL_MODE" = "update" ]; then
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                                                                   ║
@@ -112,6 +312,17 @@ cat << "EOF"
 ║                                                                   ║
 ║   This wizard will update your application files while            ║
 ║   preserving your database and uploaded files.                    ║
+║                                                                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+EOF
+elif [ "$INSTALL_MODE" = "uninstall" ]; then
+cat << "EOF"
+╔═══════════════════════════════════════════════════════════════════╗
+║                                                                   ║
+║   Secure FTP Web Application - Uninstall Wizard                   ║
+║                                                                   ║
+║   This wizard removes the application and can optionally          ║
+║   remove database resources.                                      ║
 ║                                                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝
 EOF
@@ -130,7 +341,11 @@ EOF
 fi
 echo -e "${NC}\n"
 
-if [ "$UPDATE_MODE" = true ]; then
+if [ "$INSTALL_MODE" = "uninstall" ]; then
+    run_uninstall
+fi
+
+if [ "$INSTALL_MODE" = "update" ]; then
     print_message "Starting update wizard..."
     echo ""
     print_warning "This script will update:"
@@ -447,6 +662,10 @@ if [ ! -d "${APP_DIR}/uploads" ]; then
     chmod -R 755 ${APP_DIR}/uploads
 fi
 print_message "Application files installed successfully"
+
+if [ "$UPDATE_MODE" = true ]; then
+    run_update_db_migrations "${APP_DIR}"
+fi
 
 # Import database schema - skip in update mode
 if [ "$UPDATE_MODE" = false ]; then

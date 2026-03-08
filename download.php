@@ -11,6 +11,7 @@ $auth = new Auth($db);
 $fileManager = new FileManager($db, $auth);
 $securityMonitor = new SecurityMonitor($db);
 $securityMonitor->cleanupOldData();
+$securityThresholds = $securityMonitor->getThresholdConfig();
 
 // Check if logged in
 if (!$auth->isLoggedIn()) {
@@ -30,9 +31,9 @@ $requestIdentifier = 'download:' . $actorId . ':' . $clientIp;
 $requestRate = $securityMonitor->registerRequest(
     'download_request',
     $requestIdentifier,
-    MAX_DOWNLOAD_REQUESTS_WINDOW,
-    DOWNLOAD_REQUEST_WINDOW_SECONDS,
-    DOWNLOAD_REQUEST_LOCKOUT_SECONDS
+    $securityThresholds['max_download_requests_window'],
+    $securityThresholds['download_request_window_seconds'],
+    $securityThresholds['download_request_lockout_seconds']
 );
 
 if (!$requestRate['allowed']) {
@@ -56,9 +57,9 @@ if (!$fileId) {
     $securityMonitor->registerFailure(
         'download_failure',
         $requestIdentifier,
-        MAX_DOWNLOAD_FAILURE_ATTEMPTS,
-        DOWNLOAD_FAILURE_WINDOW_SECONDS,
-        DOWNLOAD_FAILURE_LOCKOUT_SECONDS
+        $securityThresholds['max_download_failure_attempts'],
+        $securityThresholds['download_failure_window_seconds'],
+        $securityThresholds['download_failure_lockout_seconds']
     );
     $securityMonitor->logEvent('download_invalid_request', 'warning', $currentUser['id'] ?? null, $requestIdentifier, [
         'reason' => 'missing_file_id'
@@ -70,9 +71,9 @@ if (!ctype_digit((string)$fileId)) {
     $securityMonitor->registerFailure(
         'download_failure',
         $requestIdentifier,
-        MAX_DOWNLOAD_FAILURE_ATTEMPTS,
-        DOWNLOAD_FAILURE_WINDOW_SECONDS,
-        DOWNLOAD_FAILURE_LOCKOUT_SECONDS
+        $securityThresholds['max_download_failure_attempts'],
+        $securityThresholds['download_failure_window_seconds'],
+        $securityThresholds['download_failure_lockout_seconds']
     );
     $securityMonitor->logEvent('download_invalid_request', 'warning', $currentUser['id'] ?? null, $requestIdentifier, [
         'reason' => 'non_numeric_file_id',
@@ -88,9 +89,9 @@ if (!$result['success']) {
     $lockState = $securityMonitor->registerFailure(
         'download_failure',
         $requestIdentifier,
-        MAX_DOWNLOAD_FAILURE_ATTEMPTS,
-        DOWNLOAD_FAILURE_WINDOW_SECONDS,
-        DOWNLOAD_FAILURE_LOCKOUT_SECONDS
+        $securityThresholds['max_download_failure_attempts'],
+        $securityThresholds['download_failure_window_seconds'],
+        $securityThresholds['download_failure_lockout_seconds']
     );
 
     $securityMonitor->logEvent('download_denied', 'warning', $currentUser['id'] ?? null, $requestIdentifier, [

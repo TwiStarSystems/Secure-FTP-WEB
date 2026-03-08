@@ -39,6 +39,48 @@ class AppSettingsManager {
         return $this->db->query($sql, [$key]);
     }
 
+    public function getInt($key, $default, $min = 1, $max = 86400) {
+        $value = $this->get($key, (string)$default);
+
+        if (!is_numeric($value)) {
+            return intval($default);
+        }
+
+        $intValue = intval($value);
+        if ($intValue < $min) {
+            return $min;
+        }
+        if ($intValue > $max) {
+            return $max;
+        }
+
+        return $intValue;
+    }
+
+    public function getSecurityThresholds() {
+        return [
+            'max_download_requests_window' => $this->getInt('security_max_download_requests_window', MAX_DOWNLOAD_REQUESTS_WINDOW, 1, 10000),
+            'download_request_window_seconds' => $this->getInt('security_download_request_window_seconds', DOWNLOAD_REQUEST_WINDOW_SECONDS, 1, 86400),
+            'download_request_lockout_seconds' => $this->getInt('security_download_request_lockout_seconds', DOWNLOAD_REQUEST_LOCKOUT_SECONDS, 1, 86400),
+
+            'max_download_failure_attempts' => $this->getInt('security_max_download_failure_attempts', MAX_DOWNLOAD_FAILURE_ATTEMPTS, 1, 10000),
+            'download_failure_window_seconds' => $this->getInt('security_download_failure_window_seconds', DOWNLOAD_FAILURE_WINDOW_SECONDS, 1, 86400),
+            'download_failure_lockout_seconds' => $this->getInt('security_download_failure_lockout_seconds', DOWNLOAD_FAILURE_LOCKOUT_SECONDS, 1, 86400),
+
+            'max_share_token_failure_attempts' => $this->getInt('security_max_share_token_failure_attempts', MAX_SHARE_TOKEN_FAILURE_ATTEMPTS, 1, 10000),
+            'share_token_failure_window_seconds' => $this->getInt('security_share_token_failure_window_seconds', SHARE_TOKEN_FAILURE_WINDOW_SECONDS, 1, 86400),
+            'share_token_failure_lockout_seconds' => $this->getInt('security_share_token_failure_lockout_seconds', SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS, 1, 86400),
+
+            'max_share_password_failure_attempts' => $this->getInt('security_max_share_password_failure_attempts', MAX_SHARE_PASSWORD_FAILURE_ATTEMPTS, 1, 10000),
+            'share_password_failure_window_seconds' => $this->getInt('security_share_password_failure_window_seconds', SHARE_PASSWORD_FAILURE_WINDOW_SECONDS, 1, 86400),
+            'share_password_failure_lockout_seconds' => $this->getInt('security_share_password_failure_lockout_seconds', SHARE_PASSWORD_FAILURE_LOCKOUT_SECONDS, 1, 86400),
+
+            'max_share_requests_window' => $this->getInt('security_max_share_requests_window', MAX_SHARE_REQUESTS_WINDOW, 1, 10000),
+            'share_request_window_seconds' => $this->getInt('security_share_request_window_seconds', SHARE_REQUEST_WINDOW_SECONDS, 1, 86400),
+            'share_request_lockout_seconds' => $this->getInt('security_share_request_lockout_seconds', SHARE_REQUEST_LOCKOUT_SECONDS, 1, 86400)
+        ];
+    }
+
     public function getSmtpSettings() {
         return [
             'enabled' => $this->get('smtp_enabled', '0') === '1',
