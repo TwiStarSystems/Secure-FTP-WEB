@@ -6,11 +6,17 @@ require_once 'auth.php';
 require_once 'users.php';
 require_once 'files.php';
 require_once 'rbac.php';
+require_once 'app_settings.php';
+require_once 'smtp_mailer.php';
+require_once 'mfa.php';
+require_once 'security_monitor.php';
 
 $db = new Database();
 $auth = new Auth($db);
 $userManager = new UserManager($db);
 $fileManager = new FileManager($db, $auth);
+$mfaService = new MFAService($db);
+$securityMonitor = new SecurityMonitor($db);
 
 // Check if logged in
 if (!$auth->isLoggedIn()) {
@@ -25,8 +31,53 @@ $isAdmin = RBAC::isAdmin();
 
 $message = null;
 
+function normalizeSecurityEventFilters($source) {
+    $severity = trim($source['security_severity'] ?? '');
+    if (!in_array($severity, ['', 'info', 'warning', 'critical'], true)) {
+        $severity = '';
+    }
+
+    $eventType = trim($source['security_event_type'] ?? '');
+    $search = trim($source['security_search'] ?? '');
+    if (strlen($search) > 100) {
+        $search = substr($search, 0, 100);
+    }
+
+    $dateFrom = trim($source['security_date_from'] ?? '');
+    if ($dateFrom !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom)) {
+        $dateFrom = '';
+    }
+
+    $dateTo = trim($source['security_date_to'] ?? '');
+    if ($dateTo !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
+        $dateTo = '';
+    }
+
+    return [
+        'severity' => $severity,
+        'event_type' => $eventType,
+        'date_from' => $dateFrom,
+        'date_to' => $dateTo,
+        'search' => $search
+    ];
+}
+
 // Handle application settings updates (Admin only)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $isAdmin) {
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['action'])
+    && $isAdmin
+    && in_array($_POST['action'], [
+        'update_base_url',
+        'update_smtp_settings',
+        'send_test_smtp_email',
+        'export_security_events',
+        'create_user',
+        'create_access_code',
+        'delete_user',
+        'delete_code'
+    ], true)
+) {
     if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
         $message = ['type' => 'error', 'message' => 'Invalid request.'];
     } else {
@@ -70,6 +121,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $isAdmin
                 $db->query($sql, ['base_url']);
                 $message = ['type' => 'success', 'message' => 'Base URL cleared. Using auto-detection.'];
             }
+        } elseif ($_POST['action'] === 'update_smtp_settings') {
+            $appSettings = new AppSettingsManager($db);
+
+            $smtpEnabled = isset($_POST['smtp_enabled']) ? '1' : '0';
+            $smtpHost = trim($_POST['smtp_host'] ?? '');
+            $smtpPort = intval($_POST['smtp_port'] ?? 587);
+            $smtpEncryption = $_POST['smtp_encryption'] ?? 'tls';
+            $smtpAuthRequired = isset($_POST['smtp_auth_required']) ? '1' : '0';
+            $smtpUsername = trim($_POST['smtp_username'] ?? '');
+            $smtpPasswordInput = trim($_POST['smtp_password'] ?? '');
+            $smtpFromEmail = trim($_POST['smtp_from_email'] ?? '');
+            $smtpFromName = trim($_POST['smtp_from_name'] ?? SITE_NAME);
+
+            if (!in_array($smtpEncryption, ['none', 'tls', 'ssl'], true)) {
+                $smtpEncryption = 'tls';
+            }
+
+            $existingSmtpPassword = $appSettings->getSmtpPassword();
+            $smtpPasswordToStore = $smtpPasswordInput !== '' ? $smtpPasswordInput : $existingSmtpPassword;
+
+            if ($smtpEnabled === '1') {
+                if ($smtpHost === '') {
+                    $message = ['type' => 'error', 'message' => 'SMTP host is required when SMTP is enabled.'];
+                } elseif ($smtpPort < 1 || $smtpPort > 65535) {
+                    $message = ['type' => 'error', 'message' => 'SMTP port must be between 1 and 65535.'];
+                } elseif (!filter_var($smtpFromEmail, FILTER_VALIDATE_EMAIL)) {
+                    $message = ['type' => 'error', 'message' => 'A valid "From Email" address is required.'];
+                } elseif ($smtpAuthRequired === '1' && $smtpUsername === '') {
+                    $message = ['type' => 'error', 'message' => 'SMTP username is required when authentication is enabled.'];
+                } elseif ($smtpAuthRequired === '1' && $smtpPasswordToStore === '') {
+                    $message = ['type' => 'error', 'message' => 'SMTP password is required when authentication is enabled.'];
+                }
+            }
+
+            if (!$message) {
+                $settingsToSave = [
+                    ['smtp_enabled', $smtpEnabled, 'boolean', 'Enable SMTP email delivery'],
+                    ['smtp_host', $smtpHost, 'string', 'SMTP server host'],
+                    ['smtp_port', (string)$smtpPort, 'integer', 'SMTP server port'],
+                    ['smtp_encryption', $smtpEncryption, 'string', 'SMTP encryption mode (none/tls/ssl)'],
+                    ['smtp_auth_required', $smtpAuthRequired, 'boolean', 'Require SMTP authentication'],
+                    ['smtp_username', $smtpUsername, 'string', 'SMTP authentication username'],
+                    ['smtp_from_email', $smtpFromEmail, 'string', 'Default sender email address'],
+                    ['smtp_from_name', $smtpFromName, 'string', 'Default sender display name']
+                ];
+
+                $allSaved = true;
+                foreach ($settingsToSave as $setting) {
+                    $saved = $appSettings->set(
+                        $setting[0],
+                        $setting[1],
+                        $setting[2],
+                        $setting[3],
+                        $_SESSION['user_id']
+                    );
+
+                    if (!$saved) {
+                        $allSaved = false;
+                        break;
+                    }
+                }
+
+                if ($allSaved) {
+                    $allSaved = $appSettings->setSmtpPassword($smtpPasswordToStore, $_SESSION['user_id']);
+                }
+
+                if ($allSaved) {
+                    $message = ['type' => 'success', 'message' => 'SMTP settings updated successfully!'];
+                } else {
+                    $message = ['type' => 'error', 'message' => 'Failed to save SMTP settings.'];
+                }
+            }
+        } elseif ($_POST['action'] === 'send_test_smtp_email') {
+            $testRecipientEmail = trim($_POST['test_recipient_email'] ?? '');
+
+            if (!filter_var($testRecipientEmail, FILTER_VALIDATE_EMAIL)) {
+                $message = ['type' => 'error', 'message' => 'Please enter a valid test recipient email address.'];
+            } else {
+                $smtpMailer = new SMTPMailer($db);
+                $result = $smtpMailer->send(
+                    $testRecipientEmail,
+                    'SMTP Test Email - ' . SITE_NAME,
+                    '<p>This is a test email from <strong>' . htmlspecialchars(SITE_NAME) . '</strong>.</p><p>If you received this message, your SMTP configuration is working.</p>',
+                    'This is a test email from ' . SITE_NAME . '. If you received this message, your SMTP configuration is working.'
+                );
+
+                if ($result['success']) {
+                    $message = ['type' => 'success', 'message' => 'Test email sent successfully to ' . $testRecipientEmail . '.'];
+                } else {
+                    $message = ['type' => 'error', 'message' => 'Failed to send test email: ' . $result['error']];
+                }
+            }
+        } elseif ($_POST['action'] === 'export_security_events') {
+            $filters = normalizeSecurityEventFilters($_POST);
+            $events = $securityMonitor->getFilteredEvents($filters, 10000);
+
+            header('Content-Type: text/csv; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="security-events-' . date('Ymd-His') . '.csv"');
+
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['timestamp', 'severity', 'event_type', 'user', 'ip_address', 'identifier', 'context_json']);
+
+            foreach ($events as $event) {
+                fputcsv($out, [
+                    $event['created_at'] ?? '',
+                    $event['severity'] ?? '',
+                    $event['event_type'] ?? '',
+                    $event['username'] ?? 'System',
+                    $event['ip_address'] ?? '',
+                    $event['identifier'] ?? '',
+                    $event['context_json'] ?? ''
+                ]);
+            }
+
+            fclose($out);
+            exit;
         } elseif ($_POST['action'] === 'create_user') {
             $isTemporary = isset($_POST['is_temporary']);
             $expiryDate = $isTemporary && !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null;
@@ -160,11 +327,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Handle MFA settings (for authenticated user accounts only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], [
+    'enable_totp_mfa',
+    'disable_totp_mfa',
+    'enable_email_mfa',
+    'disable_email_mfa'
+], true)) {
+    if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
+        $message = ['type' => 'error', 'message' => 'Invalid request.'];
+    } elseif (!$currentUser) {
+        $message = ['type' => 'error', 'message' => 'MFA settings are only available for user accounts.'];
+    } else {
+        if ($_POST['action'] === 'enable_totp_mfa') {
+            $result = $mfaService->enableTotpForUser($currentUser['id']);
+            if ($result['success']) {
+                $message = ['type' => 'success', 'message' => 'TOTP MFA enabled. Add the secret to your authenticator app.'];
+            } else {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            }
+        } elseif ($_POST['action'] === 'disable_totp_mfa') {
+            $result = $mfaService->disableTotpForUser($currentUser['id']);
+            if ($result) {
+                $message = ['type' => 'success', 'message' => 'TOTP MFA disabled.'];
+            } else {
+                $message = ['type' => 'error', 'message' => 'Failed to disable TOTP MFA.'];
+            }
+        } elseif ($_POST['action'] === 'enable_email_mfa') {
+            $result = $mfaService->enableEmailForUser($currentUser['id']);
+            if ($result['success']) {
+                $message = ['type' => 'success', 'message' => 'Email MFA enabled.'];
+            } else {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            }
+        } elseif ($_POST['action'] === 'disable_email_mfa') {
+            $result = $mfaService->disableEmailForUser($currentUser['id']);
+            if ($result) {
+                $message = ['type' => 'success', 'message' => 'Email MFA disabled.'];
+            } else {
+                $message = ['type' => 'error', 'message' => 'Failed to disable Email MFA.'];
+            }
+        }
+    }
+}
+
 // Get admin data if user is admin
 $users = [];
 $accessCodes = [];
 $customBaseUrl = '';
 $autoDetectedBaseUrl = '';
+$smtpSettings = [
+    'enabled' => false,
+    'host' => '',
+    'port' => 587,
+    'encryption' => 'tls',
+    'username' => '',
+    'auth_required' => true,
+    'from_email' => '',
+    'from_name' => SITE_NAME
+];
+$hasSmtpPassword = false;
+$mfaSettings = null;
+$mfaMethods = ['totp' => false, 'email' => false];
+$totpProvisioningUri = '';
+$securityEvents = [];
+$securityEventTypes = [];
+$securityEventFilters = [
+    'severity' => '',
+    'event_type' => '',
+    'date_from' => '',
+    'date_to' => '',
+    'search' => ''
+];
+
+if ($currentUser) {
+    $mfaSettings = $mfaService->getUserMfaSettings($currentUser['id']);
+    if ($mfaSettings) {
+        $mfaMethods = $mfaService->getAvailableMethods($mfaSettings);
+        if (!empty($mfaSettings['totp_secret'])) {
+            $totpProvisioningUri = $mfaService->getTotpProvisioningUri($currentUser['username'], $mfaSettings['totp_secret']);
+        }
+    }
+}
+
 if ($isAdmin) {
     $users = $userManager->getAllUsers();
     $accessCodes = $userManager->getAllAccessCodes();
@@ -176,6 +421,23 @@ if ($isAdmin) {
     
     // Get auto-detected base URL for comparison
     $autoDetectedBaseUrl = getBaseUrl();
+
+    // Get current SMTP settings
+    $appSettings = new AppSettingsManager($db);
+    $smtpSettings = $appSettings->getSmtpSettings();
+    $hasSmtpPassword = !empty($smtpSettings['password']);
+
+    $securityEventFilters = normalizeSecurityEventFilters($_GET);
+    $securityEventTypes = $securityMonitor->getDistinctEventTypes(500);
+
+    if (
+        $securityEventFilters['event_type'] !== ''
+        && !in_array($securityEventFilters['event_type'], $securityEventTypes, true)
+    ) {
+        $securityEventFilters['event_type'] = '';
+    }
+
+    $securityEvents = $securityMonitor->getFilteredEvents($securityEventFilters, 250);
 }
 
 // Generate CSRF token
@@ -198,6 +460,17 @@ $csrfToken = $auth->generateCSRFToken();
                 <?php echo htmlspecialchars($message['message']); ?>
             </div>
         <?php endif; ?>
+
+        <?php if ($isAdmin): ?>
+            <div class="settings-tabs">
+                <button type="button" class="settings-tab-button active" data-settings-tab="user-settings" onclick="switchSettingsTab('user-settings')">User Settings</button>
+                <button type="button" class="settings-tab-button" data-settings-tab="user-management" onclick="switchSettingsTab('user-management')">User Management</button>
+                <button type="button" class="settings-tab-button" data-settings-tab="site-settings" onclick="switchSettingsTab('site-settings')">Site Settings</button>
+                <button type="button" class="settings-tab-button" data-settings-tab="security-events" onclick="switchSettingsTab('security-events')">Security Events</button>
+            </div>
+        <?php endif; ?>
+
+        <div class="settings-tab-panel active" data-settings-panel="user-settings">
         
         <div class="card">
             <div class="card-header">
@@ -254,6 +527,80 @@ $csrfToken = $auth->generateCSRFToken();
                             <button type="submit" class="btn">Change Password</button>
                         </form>
                     </div>
+
+                    <hr style="border-color: var(--color-border); margin: 2rem 0;">
+
+                    <div class="settings-section">
+                        <h3>Multi-Factor Authentication (MFA)</h3>
+
+                        <div class="info-grid" style="margin-bottom: 1rem;">
+                            <div class="info-item">
+                                <label>TOTP Authenticator:</label>
+                                <span>
+                                    <?php if (!empty($mfaMethods['totp'])): ?>
+                                        <span class="badge badge-success">Enabled</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-warning">Disabled</span>
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                            <div class="info-item">
+                                <label>Email Codes:</label>
+                                <span>
+                                    <?php if (!empty($mfaMethods['email'])): ?>
+                                        <span class="badge badge-success">Enabled</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-warning">Disabled</span>
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="btn-row" style="margin-bottom: 1rem;">
+                            <?php if (!empty($mfaMethods['totp'])): ?>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="action" value="disable_totp_mfa">
+                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                                    <button type="submit" class="btn btn-danger">Disable TOTP</button>
+                                </form>
+                            <?php else: ?>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="action" value="enable_totp_mfa">
+                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                                    <button type="submit" class="btn btn-primary">Enable TOTP</button>
+                                </form>
+                            <?php endif; ?>
+
+                            <?php if (!empty($mfaMethods['email'])): ?>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="action" value="disable_email_mfa">
+                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                                    <button type="submit" class="btn btn-danger">Disable Email MFA</button>
+                                </form>
+                            <?php else: ?>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="action" value="enable_email_mfa">
+                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                                    <button type="submit" class="btn btn-secondary">Enable Email MFA</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php if (!empty($mfaMethods['totp']) && !empty($mfaSettings) && !empty($mfaSettings['totp_secret'])): ?>
+                            <div class="hash-info">
+                                <strong>TOTP Setup Secret:</strong><br>
+                                <span class="hash-display"><?php echo htmlspecialchars($mfaSettings['totp_secret']); ?></span>
+                                <small style="display: block; margin-top: 0.5rem; color: var(--color-muted);">
+                                    Add this secret manually in your authenticator app, or use this provisioning URI:
+                                </small>
+                                <span class="hash-display" style="display: block; margin-top: 0.5rem;"><?php echo htmlspecialchars($totpProvisioningUri); ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <small style="display: block; margin-top: 0.75rem; color: var(--color-muted);">
+                            You can enable either one method or both. During login, you can use any enabled method.
+                        </small>
+                    </div>
                 <?php else: ?>
                     <div class="alert alert-info">
                         <strong>Note:</strong> You are logged in with an access code. Password changes are only available for registered users.
@@ -261,9 +608,11 @@ $csrfToken = $auth->generateCSRFToken();
                 <?php endif; ?>
             </div>
         </div>
+        </div>
         
         <?php if ($isAdmin): ?>
         <!-- Application Settings Section (Admin Only) -->
+        <div class="settings-tab-panel" data-settings-panel="site-settings">
         <div class="card">
             <div class="card-header">
                 <h2>⚙️ Application Settings</h2>
@@ -303,6 +652,93 @@ $csrfToken = $auth->generateCSRFToken();
                         <?php endif; ?>
                     </div>
                 </form>
+
+                <hr style="border-color: var(--color-border); margin: 2rem 0;">
+
+                <h3>SMTP Email Settings</h3>
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_smtp_settings">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+
+                    <div class="checkbox-group" style="margin-bottom: 1rem;">
+                        <input type="checkbox" id="smtp_enabled" name="smtp_enabled" value="1" <?php echo $smtpSettings['enabled'] ? 'checked' : ''; ?>>
+                        <label for="smtp_enabled" style="margin: 0">Enable SMTP Email Delivery</label>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="smtp_host">SMTP Host</label>
+                            <input type="text" id="smtp_host" name="smtp_host" value="<?php echo htmlspecialchars($smtpSettings['host']); ?>" placeholder="smtp.example.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="smtp_port">SMTP Port</label>
+                            <input type="number" id="smtp_port" name="smtp_port" value="<?php echo intval($smtpSettings['port']); ?>" min="1" max="65535">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="smtp_encryption">Encryption</label>
+                            <select id="smtp_encryption" name="smtp_encryption">
+                                <option value="none" <?php echo $smtpSettings['encryption'] === 'none' ? 'selected' : ''; ?>>None</option>
+                                <option value="tls" <?php echo $smtpSettings['encryption'] === 'tls' ? 'selected' : ''; ?>>STARTTLS (TLS)</option>
+                                <option value="ssl" <?php echo $smtpSettings['encryption'] === 'ssl' ? 'selected' : ''; ?>>SSL</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="checkbox-group" style="margin-bottom: 1rem;">
+                        <input type="checkbox" id="smtp_auth_required" name="smtp_auth_required" value="1" <?php echo $smtpSettings['auth_required'] ? 'checked' : ''; ?> onchange="toggleSmtpAuthFields()">
+                        <label for="smtp_auth_required" style="margin: 0">SMTP Authentication Required</label>
+                    </div>
+
+                    <div class="form-grid" id="smtp_auth_fields">
+                        <div class="form-group">
+                            <label for="smtp_username">SMTP Username</label>
+                            <input type="text" id="smtp_username" name="smtp_username" value="<?php echo htmlspecialchars($smtpSettings['username']); ?>">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="smtp_password">SMTP Password</label>
+                            <input type="password" id="smtp_password" name="smtp_password" placeholder="<?php echo $hasSmtpPassword ? 'Saved (leave blank to keep current)' : 'Enter SMTP password'; ?>">
+                            <small style="display: block; margin-top: 0.25rem; color: var(--color-muted);">
+                                <?php echo $hasSmtpPassword ? 'A password is already saved.' : 'No password is currently saved.'; ?>
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="smtp_from_email">From Email</label>
+                            <input type="email" id="smtp_from_email" name="smtp_from_email" value="<?php echo htmlspecialchars($smtpSettings['from_email']); ?>" placeholder="noreply@example.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="smtp_from_name">From Name</label>
+                            <input type="text" id="smtp_from_name" name="smtp_from_name" value="<?php echo htmlspecialchars($smtpSettings['from_name']); ?>" placeholder="<?php echo htmlspecialchars(SITE_NAME); ?>">
+                        </div>
+                    </div>
+
+                    <div class="btn-row">
+                        <button type="submit" class="btn btn-primary">Save SMTP Settings</button>
+                    </div>
+                </form>
+
+                <form method="POST" style="margin-top: 1rem;">
+                    <input type="hidden" name="action" value="send_test_smtp_email">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+
+                    <div class="form-group">
+                        <label for="test_recipient_email">Send Test Email To</label>
+                        <input type="email" id="test_recipient_email" name="test_recipient_email" placeholder="admin@example.com" required>
+                        <small style="display: block; margin-top: 0.25rem; color: var(--color-muted);">
+                            Uses the currently saved SMTP settings.
+                        </small>
+                    </div>
+
+                    <div class="btn-row">
+                        <button type="submit" class="btn btn-secondary">Send Test Email</button>
+                    </div>
+                </form>
                 
                 <!-- Detection Info -->
                 <div class="hash-info" style="margin-top: 1.5rem;">
@@ -322,8 +758,10 @@ $csrfToken = $auth->generateCSRFToken();
                 </div>
             </div>
         </div>
+        </div>
         
         <!-- User Management Section -->
+        <div class="settings-tab-panel" data-settings-panel="user-management">
         <div class="card">
             <div class="card-header">
                 <h2>👥 Create New User</h2>
@@ -539,18 +977,188 @@ $csrfToken = $auth->generateCSRFToken();
                 </div>
             </div>
         </div>
+        </div>
+
+        <div class="settings-tab-panel" data-settings-panel="security-events">
+            <div class="card">
+                <div class="card-header">
+                    <h2>🛡️ Security Events</h2>
+                </div>
+                <div class="card-body">
+                    <form method="GET" class="form-group" style="margin-bottom: 1.25rem;">
+                        <input type="hidden" name="settings_tab" value="security-events">
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="security_severity">Severity</label>
+                                <select id="security_severity" name="security_severity">
+                                    <option value="" <?php echo $securityEventFilters['severity'] === '' ? 'selected' : ''; ?>>All</option>
+                                    <option value="info" <?php echo $securityEventFilters['severity'] === 'info' ? 'selected' : ''; ?>>Info</option>
+                                    <option value="warning" <?php echo $securityEventFilters['severity'] === 'warning' ? 'selected' : ''; ?>>Warning</option>
+                                    <option value="critical" <?php echo $securityEventFilters['severity'] === 'critical' ? 'selected' : ''; ?>>Critical</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="security_event_type">Event Type</label>
+                                <select id="security_event_type" name="security_event_type">
+                                    <option value="" <?php echo $securityEventFilters['event_type'] === '' ? 'selected' : ''; ?>>All</option>
+                                    <?php foreach ($securityEventTypes as $eventTypeOption): ?>
+                                        <option value="<?php echo htmlspecialchars($eventTypeOption); ?>" <?php echo $securityEventFilters['event_type'] === $eventTypeOption ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($eventTypeOption); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="security_date_from">Date From</label>
+                                <input type="date" id="security_date_from" name="security_date_from" value="<?php echo htmlspecialchars($securityEventFilters['date_from']); ?>">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="security_date_to">Date To</label>
+                                <input type="date" id="security_date_to" name="security_date_to" value="<?php echo htmlspecialchars($securityEventFilters['date_to']); ?>">
+                            </div>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="security_search">Search</label>
+                                <input type="text" id="security_search" name="security_search" value="<?php echo htmlspecialchars($securityEventFilters['search']); ?>" placeholder="Event, username, IP, identifier, context">
+                            </div>
+                        </div>
+
+                        <div class="btn-row">
+                            <button type="submit" class="btn btn-primary">Apply Filters</button>
+                            <a href="settings.php?settings_tab=security-events" class="btn btn-secondary">Clear Filters</a>
+                        </div>
+                    </form>
+
+                    <form method="POST" style="margin-bottom: 1.25rem;">
+                        <input type="hidden" name="action" value="export_security_events">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                        <input type="hidden" name="security_severity" value="<?php echo htmlspecialchars($securityEventFilters['severity']); ?>">
+                        <input type="hidden" name="security_event_type" value="<?php echo htmlspecialchars($securityEventFilters['event_type']); ?>">
+                        <input type="hidden" name="security_date_from" value="<?php echo htmlspecialchars($securityEventFilters['date_from']); ?>">
+                        <input type="hidden" name="security_date_to" value="<?php echo htmlspecialchars($securityEventFilters['date_to']); ?>">
+                        <input type="hidden" name="security_search" value="<?php echo htmlspecialchars($securityEventFilters['search']); ?>">
+                        <div class="btn-row">
+                            <button type="submit" class="btn btn-secondary">Export CSV</button>
+                        </div>
+                    </form>
+
+                    <?php if (empty($securityEvents)): ?>
+                        <div class="alert alert-info">No security events recorded yet.</div>
+                    <?php else: ?>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Severity</th>
+                                        <th>Event</th>
+                                        <th>User</th>
+                                        <th>IP</th>
+                                        <th>Identifier</th>
+                                        <th>Context</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($securityEvents as $event): ?>
+                                        <tr>
+                                            <td><?php echo date('Y-m-d H:i:s', strtotime($event['created_at'])); ?></td>
+                                            <td>
+                                                <?php if ($event['severity'] === 'critical'): ?>
+                                                    <span class="badge badge-danger">Critical</span>
+                                                <?php elseif ($event['severity'] === 'warning'): ?>
+                                                    <span class="badge badge-warning">Warning</span>
+                                                <?php else: ?>
+                                                    <span class="badge badge-info">Info</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><?php echo htmlspecialchars($event['event_type']); ?></td>
+                                            <td><?php echo htmlspecialchars($event['username'] ?? 'System'); ?></td>
+                                            <td><?php echo htmlspecialchars($event['ip_address']); ?></td>
+                                            <td><?php echo htmlspecialchars($event['identifier']); ?></td>
+                                            <td>
+                                                <small class="event-context" title="<?php echo htmlspecialchars($event['context_json'] ?? ''); ?>">
+                                                    <?php
+                                                        $contextPreview = $event['context_json'] ?? '';
+                                                        if (strlen($contextPreview) > 80) {
+                                                            $contextPreview = substr($contextPreview, 0, 77) . '...';
+                                                        }
+                                                        echo htmlspecialchars($contextPreview === '' ? '-' : $contextPreview);
+                                                    ?>
+                                                </small>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
         
         <script>
+            function switchSettingsTab(tabName) {
+                const tabButtons = document.querySelectorAll('.settings-tab-button');
+                const tabPanels = document.querySelectorAll('.settings-tab-panel');
+
+                tabButtons.forEach((btn) => {
+                    const isActive = btn.getAttribute('data-settings-tab') === tabName;
+                    btn.classList.toggle('active', isActive);
+                });
+
+                tabPanels.forEach((panel) => {
+                    const isActive = panel.getAttribute('data-settings-panel') === tabName;
+                    panel.classList.toggle('active', isActive);
+                });
+
+                try {
+                    localStorage.setItem('settings_active_tab', tabName);
+                } catch (error) {
+                }
+            }
+
             function toggleExpiryDate() {
                 const checkbox = document.getElementById('is_temporary');
                 const expiryGroup = document.getElementById('expiry_date_group');
                 expiryGroup.style.display = checkbox.checked ? 'flex' : 'none';
+            }
+
+            function toggleSmtpAuthFields() {
+                const authCheckbox = document.getElementById('smtp_auth_required');
+                const authFields = document.getElementById('smtp_auth_fields');
+
+                if (!authCheckbox || !authFields) {
+                    return;
+                }
+
+                authFields.style.display = authCheckbox.checked ? 'grid' : 'none';
             }
             
             function clearBaseUrl() {
                 document.getElementById('base_url').value = '';
                 document.getElementById('base_url').closest('form').submit();
             }
+
+            const hasSettingsTabs = document.querySelector('.settings-tab-button') !== null;
+            if (hasSettingsTabs) {
+                let initialTab = '<?php echo (isset($_GET['settings_tab']) && in_array($_GET['settings_tab'], ['user-settings', 'user-management', 'site-settings', 'security-events'], true)) ? htmlspecialchars($_GET['settings_tab']) : 'user-settings'; ?>';
+                try {
+                    const storedTab = localStorage.getItem('settings_active_tab');
+                    if (storedTab && initialTab === 'user-settings') {
+                        initialTab = storedTab;
+                    }
+                } catch (error) {
+                }
+                switchSettingsTab(initialTab);
+            }
+
+            toggleSmtpAuthFields();
         </script>
         <?php endif; ?>
     </div>

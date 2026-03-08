@@ -19,9 +19,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || !$auth->verifyCSRFToken($_POST['csrf_token'])) {
         $error = 'Invalid request. Please try again.';
     } else {
-        $loginType = $_POST['login_type'] ?? 'user';
-        
-        if ($loginType === 'user') {
+        if (isset($_POST['action']) && $_POST['action'] === 'verify_mfa') {
+            $mfaMethod = $_POST['mfa_method'] ?? '';
+            $mfaCode = $_POST['mfa_code'] ?? '';
+
+            $result = $auth->verifyPendingMfa($mfaMethod, $mfaCode);
+            if ($result['success']) {
+                header('Location: index.php');
+                exit;
+            }
+
+            $error = $result['error'];
+        } elseif (isset($_POST['action']) && $_POST['action'] === 'resend_mfa_email_code') {
+            $result = $auth->sendPendingEmailMfaCode();
+            if ($result['success']) {
+                $message = 'A new MFA code was sent to your email.';
+            } else {
+                $error = $result['error'];
+            }
+        } else {
+            $loginType = $_POST['login_type'] ?? 'user';
+
+            if ($loginType === 'user') {
             $username = $_POST['username'] ?? '';
             $password = $_POST['password'] ?? '';
             
@@ -30,23 +49,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result['success']) {
                 header('Location: index.php');
                 exit;
+            } elseif (!empty($result['requires_mfa'])) {
+                if (!empty($result['available_methods']['email']) && empty($result['available_methods']['totp'])) {
+                    $message = 'A verification code was sent to your email.';
+                }
             } else {
                 $error = $result['error'];
             }
-        } elseif ($loginType === 'code') {
-            $accessCode = $_POST['access_code'] ?? '';
-            
-            $result = $auth->loginWithAccessCode($accessCode);
-            
-            if ($result['success']) {
-                header('Location: index.php');
-                exit;
-            } else {
-                $error = $result['error'];
+
+            } elseif ($loginType === 'code') {
+                $accessCode = $_POST['access_code'] ?? '';
+
+                $result = $auth->loginWithAccessCode($accessCode);
+
+                if ($result['success']) {
+                    header('Location: index.php');
+                    exit;
+                } else {
+                    $error = $result['error'];
+                }
             }
         }
     }
 }
+
+$pendingMfa = $auth->hasPendingMfa();
+$mfaMethods = $auth->getPendingMfaMethods();
 
 // Generate CSRF token
 $csrfToken = $auth->generateCSRFToken();

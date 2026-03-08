@@ -18,6 +18,27 @@ define('SESSION_TIMEOUT', 3600); // 1 hour
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('LOCKOUT_DURATION', 900); // 15 minutes in seconds
 
+// Download and share abuse protection settings
+define('MAX_DOWNLOAD_REQUESTS_WINDOW', 120); // requests per window
+define('DOWNLOAD_REQUEST_WINDOW_SECONDS', 300); // 5 minutes
+define('DOWNLOAD_REQUEST_LOCKOUT_SECONDS', 600); // 10 minutes
+
+define('MAX_DOWNLOAD_FAILURE_ATTEMPTS', 12); // invalid/forbidden attempts per window
+define('DOWNLOAD_FAILURE_WINDOW_SECONDS', 600); // 10 minutes
+define('DOWNLOAD_FAILURE_LOCKOUT_SECONDS', 900); // 15 minutes
+
+define('MAX_SHARE_TOKEN_FAILURE_ATTEMPTS', 15); // invalid token attempts per window
+define('SHARE_TOKEN_FAILURE_WINDOW_SECONDS', 600); // 10 minutes
+define('SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS', 1800); // 30 minutes
+
+define('MAX_SHARE_PASSWORD_FAILURE_ATTEMPTS', 8); // wrong password attempts per window
+define('SHARE_PASSWORD_FAILURE_WINDOW_SECONDS', 600); // 10 minutes
+define('SHARE_PASSWORD_FAILURE_LOCKOUT_SECONDS', 1200); // 20 minutes
+
+define('MAX_SHARE_REQUESTS_WINDOW', 120); // requests per window
+define('SHARE_REQUEST_WINDOW_SECONDS', 600); // 10 minutes
+define('SHARE_REQUEST_LOCKOUT_SECONDS', 900); // 15 minutes
+
 // Hashing algorithms available
 define('HASH_ALGORITHMS', ['sha256', 'sha512', 'sha1']);
 define('DEFAULT_HASH_ALGORITHM', 'sha256');

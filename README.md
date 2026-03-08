@@ -18,6 +18,12 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 - **Admin Login**: Full administrative control with user management capabilities
 - **User Management**: Create regular and temporary users with auto-deletion on expiry dates
 - **Access Codes**: Generate temporary access codes with limited login counts and expiry dates
+- **SMTP Email Settings**: Configure SMTP (TLS/SSL) from Settings with built-in test email support
+- **Multi-Factor Authentication (MFA)**: Per-user enable/disable for TOTP app codes and Email verification codes
+- **Tabbed Settings Interface**: User Settings, User Management, Site Settings, and Security Events sections
+- **Security Events Viewer**: Admin-accessible audit view for abuse lockouts and suspicious activity
+- **Security Events Filtering**: Filter by severity, event type, date range, and free-text search
+- **Security Events CSV Export**: Export filtered security events directly from Settings
 - **CSRF Protection**: Built-in Cross-Site Request Forgery protection for all forms
 
 ### 🔗 File Sharing
@@ -37,6 +43,8 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 ### 🔒 Security Features
 - **File Integrity**: SHA hashing (SHA-1, SHA-256, SHA-512) for file integrity verification
 - **Rate Limiting**: Anti-brute force protection with configurable lockout duration
+- **Download Abuse Protection**: Request throttling + lockouts for repeated invalid/forbidden download attempts
+- **Share Token Abuse Protection**: Token/password brute-force lockouts with suspicious activity auditing
 - **Session Management**: Automatic session timeouts for security
 - **Password Hashing**: Industry-standard bcrypt password hashing
 - **Input Validation**: Comprehensive input validation and sanitization
@@ -197,8 +205,15 @@ For manual installation or other operating systems, see the detailed instruction
 1. Log in with admin credentials
 2. Access the Admin Panel from the dashboard
 3. Create users or access codes
-4. Manage quotas and permissions
+4. Configure application and SMTP email settings
 5. Monitor user activity
+
+### Multi-Factor Authentication (MFA)
+1. Go to **Settings** while logged in with a user account
+2. In **MFA Settings**, enable either or both methods:
+   - **TOTP Authenticator** (6-digit app codes)
+   - **Email Codes** (6-digit codes sent by SMTP)
+3. During login, choose any enabled method to complete authentication
 
 ### Creating Temporary Users
 1. In Admin Panel, check "Temporary User"

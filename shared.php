@@ -6,23 +6,113 @@
 require_once 'config.php';
 require_once 'db.php';
 require_once 'share.php';
+require_once 'security_monitor.php';
 
 $db = new Database();
 $shareManager = new ShareManager($db);
+$securityMonitor = new SecurityMonitor($db);
+$securityMonitor->cleanupOldData();
+
+$clientIp = $securityMonitor->getClientIp();
+$baseIdentifier = 'share:' . $clientIp;
+
+$shareRequestRate = $securityMonitor->registerRequest(
+    'share_request',
+    $baseIdentifier,
+    MAX_SHARE_REQUESTS_WINDOW,
+    SHARE_REQUEST_WINDOW_SECONDS,
+    SHARE_REQUEST_LOCKOUT_SECONDS
+);
+
+if (!$shareRequestRate['allowed']) {
+    $securityMonitor->logEvent('share_rate_limited', 'warning', null, $baseIdentifier, [
+        'retry_after' => $shareRequestRate['retry_after']
+    ]);
+    http_response_code(429);
+    die('Too many share requests. Please try again later.');
+}
+
+$tokenFailureLock = $securityMonitor->getLockStatus('share_token_failure', $baseIdentifier);
+if ($tokenFailureLock['locked']) {
+    $securityMonitor->logEvent('share_token_lockout_active', 'warning', null, $baseIdentifier, [
+        'retry_after' => $tokenFailureLock['retry_after']
+    ]);
+    http_response_code(429);
+    die('Too many invalid share token attempts. Please try again later.');
+}
 
 // Get share token from URL
 $token = $_GET['token'] ?? null;
 
 if (!$token) {
+    $securityMonitor->registerFailure(
+        'share_token_failure',
+        $baseIdentifier,
+        MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
+        SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
+        SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS
+    );
+    $securityMonitor->logEvent('share_missing_token', 'warning', null, $baseIdentifier, []);
     die('Invalid share link.');
+}
+
+if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+    $lockState = $securityMonitor->registerFailure(
+        'share_token_failure',
+        $baseIdentifier,
+        MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
+        SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
+        SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS
+    );
+    $securityMonitor->logEvent('share_invalid_token_format', 'warning', null, $baseIdentifier, [
+        'token_prefix' => substr($token, 0, 12),
+        'locked' => $lockState['locked']
+    ]);
+
+    if ($lockState['locked']) {
+        http_response_code(429);
+        die('Too many invalid share token attempts. Please try again later.');
+    }
+
+    die('Invalid share link.');
+}
+
+$tokenIdentifier = $baseIdentifier . ':' . substr($token, 0, 16);
+
+$passwordFailureLock = $securityMonitor->getLockStatus('share_password_failure', $tokenIdentifier);
+if ($passwordFailureLock['locked']) {
+    $securityMonitor->logEvent('share_password_lockout_active', 'warning', null, $tokenIdentifier, [
+        'retry_after' => $passwordFailureLock['retry_after']
+    ]);
+    http_response_code(429);
+    die('Too many failed password attempts for this share link. Please try again later.');
 }
 
 // Get share details
 $share = $shareManager->getShareByToken($token);
 
 if (!$share) {
+    $lockState = $securityMonitor->registerFailure(
+        'share_token_failure',
+        $baseIdentifier,
+        MAX_SHARE_TOKEN_FAILURE_ATTEMPTS,
+        SHARE_TOKEN_FAILURE_WINDOW_SECONDS,
+        SHARE_TOKEN_FAILURE_LOCKOUT_SECONDS
+    );
+    $securityMonitor->logEvent('share_token_not_found', 'warning', null, $tokenIdentifier, [
+        'token_prefix' => substr($token, 0, 16),
+        'locked' => $lockState['locked']
+    ]);
+
+    if ($lockState['locked']) {
+        http_response_code(429);
+        die('Too many invalid share token attempts. Please try again later.');
+    }
+
     die('Share link not found or has been removed.');
 }
+
+$securityMonitor->clearCounter('share_token_failure', $baseIdentifier);
 
 // Handle password submission
 $password = $_POST['password'] ?? null;
@@ -81,6 +171,26 @@ if (!$validation['valid'] && isset($validation['requires_password'])) {
 
 // If invalid for other reasons, show error
 if (!$validation['valid']) {
+    if (!empty($validation['error']) && $validation['error'] === 'Invalid password.') {
+        $lockState = $securityMonitor->registerFailure(
+            'share_password_failure',
+            $tokenIdentifier,
+            MAX_SHARE_PASSWORD_FAILURE_ATTEMPTS,
+            SHARE_PASSWORD_FAILURE_WINDOW_SECONDS,
+            SHARE_PASSWORD_FAILURE_LOCKOUT_SECONDS
+        );
+
+        $securityMonitor->logEvent('share_password_failed', 'warning', null, $tokenIdentifier, [
+            'share_id' => intval($share['id']),
+            'locked' => $lockState['locked']
+        ]);
+
+        if ($lockState['locked']) {
+            http_response_code(429);
+            die('Too many failed password attempts for this share link. Please try again later.');
+        }
+    }
+
     ?>
     <!DOCTYPE html>
     <html lang="en">
@@ -111,19 +221,49 @@ if (!$validation['valid']) {
 
 // If we get here, share is valid - check if download requested
 if (isset($_GET['download']) && $_GET['download'] === '1') {
+    $downloadRequestRate = $securityMonitor->registerRequest(
+        'share_download_request',
+        $tokenIdentifier,
+        MAX_DOWNLOAD_REQUESTS_WINDOW,
+        DOWNLOAD_REQUEST_WINDOW_SECONDS,
+        DOWNLOAD_REQUEST_LOCKOUT_SECONDS
+    );
+
+    if (!$downloadRequestRate['allowed']) {
+        $securityMonitor->logEvent('share_download_rate_limited', 'warning', null, $tokenIdentifier, [
+            'share_id' => intval($share['id']),
+            'retry_after' => $downloadRequestRate['retry_after']
+        ]);
+        http_response_code(429);
+        die('Too many download requests for this share link. Please try again later.');
+    }
+
     // Validate filename to prevent path traversal
     if (strpos($share['filename'], '..') !== false || strpos($share['filename'], '/') !== false || strpos($share['filename'], '\\') !== false) {
+        $securityMonitor->logEvent('share_download_invalid_filename', 'critical', null, $tokenIdentifier, [
+            'share_id' => intval($share['id'])
+        ]);
         die('Invalid filename.');
     }
     
     $filepath = UPLOAD_DIR . $share['filename'];
     
     if (!file_exists($filepath) || !is_file($filepath)) {
+        $securityMonitor->logEvent('share_download_missing_file', 'warning', null, $tokenIdentifier, [
+            'share_id' => intval($share['id']),
+            'file_id' => intval($share['file_id'])
+        ]);
         die('File not found on disk.');
     }
     
     // Record download for share and file
     $shareManager->recordDownload($share['id']);
+
+    $securityMonitor->clearCounter('share_password_failure', $tokenIdentifier);
+    $securityMonitor->logEvent('share_download_success', 'info', null, $tokenIdentifier, [
+        'share_id' => intval($share['id']),
+        'file_id' => intval($share['file_id'])
+    ]);
     
     // Update file download count
     $sql = "UPDATE files SET download_count = download_count + 1 WHERE id = ?";

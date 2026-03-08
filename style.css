@@ -311,6 +311,7 @@ input::placeholder {
   align-items: center;
   width: 100%;
   gap: var(--spacing-md);
+  padding: 5px;
 }
 
 .header h1 {
@@ -990,6 +991,42 @@ body.simple-page {
 }
 
 /* Settings Page Styles */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.settings-tab-button {
+  background: rgba(0, 0, 48, 0.65);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-tab-button:hover {
+  color: var(--color-white);
+  border-color: var(--color-twistar-purple);
+}
+
+.settings-tab-button.active {
+  color: var(--color-white);
+  border-color: var(--color-twistar-purple);
+  background: rgba(150, 0, 225, 0.2);
+}
+
+.settings-tab-panel {
+  display: none;
+}
+
+.settings-tab-panel.active {
+  display: block;
+}
+
 .settings-section {
   margin-bottom: var(--spacing-xl);
 }
@@ -1033,6 +1070,15 @@ body.simple-page {
   color: var(--color-white);
   padding: var(--spacing-md);
   margin-top: var(--spacing-md);
+}
+
+.event-context {
+  display: inline-block;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-muted);
 }
 
 /* Print Styles */

@@ -2,12 +2,15 @@
 // Authentication and rate limiting functions
 require_once 'db.php';
 require_once 'rbac.php';
+require_once 'mfa.php';
 
 class Auth {
     private $db;
+    private $mfaService;
     
     public function __construct($db) {
         $this->db = $db;
+        $this->mfaService = new MFAService($db);
     }
     
     // Check if IP or username is rate limited
@@ -62,23 +65,30 @@ class Auth {
                 return ['success' => false, 'error' => 'User account has expired.'];
             }
             
-            // Update last login
-            $sql = "UPDATE users SET last_login = NOW() WHERE id = ?";
-            $this->db->query($sql, [$user['id']]);
-            
-            // Record successful attempt
-            $this->recordLoginAttempt($identifier, true);
-            
-            // Determine role - check role column first, fall back to is_admin
-            $role = isset($user['role']) && !empty($user['role']) ? $user['role'] : ($user['is_admin'] ? 'admin' : 'user');
-            
-            // Set session
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['is_admin'] = $user['is_admin'];
-            $_SESSION['user_role'] = $role;
-            $_SESSION['login_time'] = time();
-            
+            $mfaSettings = $this->mfaService->getUserMfaSettings($user['id']);
+            $availableMethods = $this->mfaService->getAvailableMethods($mfaSettings);
+
+            if ($availableMethods['totp'] || $availableMethods['email']) {
+                $_SESSION['mfa_pending_user_id'] = $user['id'];
+                $_SESSION['mfa_pending_identifier'] = $identifier;
+                $_SESSION['mfa_pending_started_at'] = time();
+                $_SESSION['mfa_available_methods'] = $availableMethods;
+
+                if ($availableMethods['email'] && !$availableMethods['totp']) {
+                    $emailResult = $this->mfaService->sendEmailCode($user['id']);
+                    if (!$emailResult['success']) {
+                        return ['success' => false, 'error' => 'Email MFA is enabled but code delivery failed: ' . $emailResult['error']];
+                    }
+                }
+
+                return [
+                    'success' => false,
+                    'requires_mfa' => true,
+                    'available_methods' => $availableMethods
+                ];
+            }
+
+            $this->completeUserLogin($user, $identifier);
             return ['success' => true, 'user' => $user];
         }
         
@@ -175,6 +185,112 @@ class Auth {
     public function logout() {
         session_unset();
         session_destroy();
+    }
+
+    public function hasPendingMfa() {
+        return isset($_SESSION['mfa_pending_user_id']);
+    }
+
+    public function getPendingMfaMethods() {
+        if (!$this->hasPendingMfa()) {
+            return ['totp' => false, 'email' => false];
+        }
+
+        $methods = $_SESSION['mfa_available_methods'] ?? ['totp' => false, 'email' => false];
+        return [
+            'totp' => !empty($methods['totp']),
+            'email' => !empty($methods['email'])
+        ];
+    }
+
+    public function sendPendingEmailMfaCode() {
+        if (!$this->hasPendingMfa()) {
+            return ['success' => false, 'error' => 'No MFA challenge in progress.'];
+        }
+
+        $methods = $this->getPendingMfaMethods();
+        if (!$methods['email']) {
+            return ['success' => false, 'error' => 'Email MFA is not available for this account.'];
+        }
+
+        $userId = intval($_SESSION['mfa_pending_user_id']);
+        return $this->mfaService->sendEmailCode($userId);
+    }
+
+    public function verifyPendingMfa($method, $code) {
+        if (!$this->hasPendingMfa()) {
+            return ['success' => false, 'error' => 'No MFA challenge in progress.'];
+        }
+
+        if (!in_array($method, ['totp', 'email'], true)) {
+            return ['success' => false, 'error' => 'Invalid MFA method.'];
+        }
+
+        $methods = $this->getPendingMfaMethods();
+        if (empty($methods[$method])) {
+            return ['success' => false, 'error' => 'Selected MFA method is not enabled for this account.'];
+        }
+
+        $userId = intval($_SESSION['mfa_pending_user_id']);
+        $identifier = 'mfa_' . $userId . '_' . $_SERVER['REMOTE_ADDR'];
+
+        if ($this->isRateLimited($identifier)) {
+            return ['success' => false, 'error' => 'Too many failed MFA attempts. Please retry login.'];
+        }
+
+        $cleanCode = preg_replace('/\D/', '', (string)$code);
+        if (strlen($cleanCode) !== 6) {
+            $this->recordLoginAttempt($identifier, false);
+            return ['success' => false, 'error' => 'MFA code must be 6 digits.'];
+        }
+
+        $verified = false;
+        if ($method === 'totp') {
+            $verified = $this->mfaService->verifyTotpCode($userId, $cleanCode);
+        } elseif ($method === 'email') {
+            $verified = $this->mfaService->verifyEmailCode($userId, $cleanCode);
+        }
+
+        if (!$verified) {
+            $this->recordLoginAttempt($identifier, false);
+            return ['success' => false, 'error' => 'Invalid or expired MFA code.'];
+        }
+
+        $this->recordLoginAttempt($identifier, true);
+
+        $user = $this->db->fetch("SELECT * FROM users WHERE id = ? AND is_active = TRUE LIMIT 1", [$userId]);
+        if (!$user) {
+            $this->clearPendingMfa();
+            return ['success' => false, 'error' => 'Account no longer available.'];
+        }
+
+        $primaryIdentifier = $_SESSION['mfa_pending_identifier'] ?? ($user['username'] . '_' . $_SERVER['REMOTE_ADDR']);
+        $this->clearPendingMfa();
+        $this->completeUserLogin($user, $primaryIdentifier);
+
+        return ['success' => true];
+    }
+
+    private function clearPendingMfa() {
+        unset($_SESSION['mfa_pending_user_id']);
+        unset($_SESSION['mfa_pending_identifier']);
+        unset($_SESSION['mfa_pending_started_at']);
+        unset($_SESSION['mfa_available_methods']);
+    }
+
+    private function completeUserLogin($user, $identifier) {
+        $sql = "UPDATE users SET last_login = NOW() WHERE id = ?";
+        $this->db->query($sql, [$user['id']]);
+
+        $this->recordLoginAttempt($identifier, true);
+
+        $role = isset($user['role']) && !empty($user['role']) ? $user['role'] : ($user['is_admin'] ? 'admin' : 'user');
+
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['is_admin'] = $user['is_admin'];
+        $_SESSION['user_role'] = $role;
+        $_SESSION['login_time'] = time();
     }
     
     // Generate CSRF token

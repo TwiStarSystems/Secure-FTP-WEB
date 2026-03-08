@@ -95,6 +95,64 @@ CREATE TABLE IF NOT EXISTS app_settings (
     INDEX idx_setting_key (setting_key)
 );
 
+-- Per-user MFA settings (TOTP and Email)
+CREATE TABLE IF NOT EXISTS user_mfa_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE,
+    totp_enabled BOOLEAN DEFAULT FALSE,
+    totp_secret TEXT NULL,
+    email_enabled BOOLEAN DEFAULT FALSE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_mfa_user (user_id)
+);
+
+-- Email MFA one-time codes
+CREATE TABLE IF NOT EXISTS mfa_email_codes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    code_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_mfa_code_user (user_id),
+    INDEX idx_mfa_code_expires (expires_at)
+);
+
+-- Abuse counters for download/share brute-force protection
+CREATE TABLE IF NOT EXISTS abuse_counters (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    action_type VARCHAR(64) NOT NULL,
+    identifier VARCHAR(191) NOT NULL,
+    attempt_count INT DEFAULT 0,
+    first_attempt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_attempt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    lockout_until DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_action_identifier (action_type, identifier),
+    INDEX idx_lockout_until (lockout_until),
+    INDEX idx_last_attempt (last_attempt)
+);
+
+-- Security audit events for suspicious activity tracking
+CREATE TABLE IF NOT EXISTS security_audit_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    severity ENUM('info', 'warning', 'critical') DEFAULT 'info',
+    user_id INT NULL,
+    ip_address VARCHAR(64) NOT NULL,
+    identifier VARCHAR(191) DEFAULT '',
+    context_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_event_type (event_type),
+    INDEX idx_created_at (created_at),
+    INDEX idx_ip_address (ip_address)
+);
+
 -- Create default admin user (username: admin, password: admin123)
 -- IMPORTANT: Change this password immediately after installation!
 -- Password hash for 'admin123'

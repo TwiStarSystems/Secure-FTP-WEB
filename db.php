@@ -68,4 +68,10 @@ function cleanupOldLoginAttempts($db) {
     $db->query($sql);
 }
 
+// Clean up old MFA email codes
+function cleanupOldMfaEmailCodes($db) {
+    $sql = "DELETE FROM mfa_email_codes WHERE expires_at < NOW() OR used_at IS NOT NULL";
+    $db->query($sql);
+}
+
 ?>

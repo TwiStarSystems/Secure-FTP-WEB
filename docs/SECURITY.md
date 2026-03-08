@@ -13,6 +13,9 @@
   - **Anonymous**: Public access - view/download publicly shared files only
 - ✅ Permission-based access checks for all file operations
 - ✅ Secure access code system with limited uses
+- ✅ Multi-Factor Authentication (MFA): TOTP and Email code methods (user-selectable)
+- ✅ Download endpoint brute-force protection (request throttling + lockouts)
+- ✅ Share token/password brute-force protection (rate limits + lockouts)
 
 ### File Sharing Security
 - ✅ Cryptographically secure share tokens (64 characters, random_bytes)
@@ -49,6 +52,9 @@
 - ✅ Prepared statements prevent SQL injection
 - ✅ No detailed error messages exposed to users
 - ✅ Errors logged server-side only
+- ✅ MFA TOTP secrets encrypted at rest
+- ✅ SMTP credentials encrypted at rest
+- ✅ Security audit events for suspicious download/share activity
 
 ### Web Server Security
 - ✅ .htaccess rules prevent directory browsing
@@ -56,6 +62,11 @@
 - ✅ Security headers configured (X-Content-Type-Options, X-XSS-Protection, X-Frame-Options)
 - ✅ .git directory access denied
 - ✅ HTTP method restrictions (GET, POST only)
+
+### Security Operations
+- ✅ Security Events viewer in Settings for administrator review
+- ✅ Download abuse events (rate limits, lockouts, denied requests)
+- ✅ Share token abuse events (invalid token attempts, password brute-force lockouts)
 
 ## Security Hardening Applied
 
@@ -113,14 +124,14 @@
    - Set up security monitoring and alerting
    - Regular security audits
    - Implement file type whitelist if specific file types are needed
-   - Consider adding two-factor authentication for admin accounts
+   - Enforce MFA usage policy for administrative users in production
 
 ## Known Limitations
 
 1. **File Size Limits**: Maximum file size is limited by PHP configuration and server resources
 2. **Concurrent Uploads**: No built-in upload queue management
 3. **Password Recovery**: No password recovery mechanism (admin must reset)
-4. **Audit Logging**: Limited audit trail (only login attempts and download counts tracked)
+4. **Audit Logging**: Security audit events are focused on suspicious authentication, download, and share-token abuse events
 5. **File Versioning**: No version control for uploaded files
 
 ## Vulnerability Assessment
@@ -161,6 +172,7 @@
 5. ✅ Path traversal testing - Validation added to all file operations
 6. ✅ CSRF testing - Tokens implemented and rotated
 7. ✅ Session security - Timeout and proper management implemented
+8. ✅ Download/share abuse controls - Request throttling, lockouts, and audit event logging implemented
 
 ## Security Contact
 

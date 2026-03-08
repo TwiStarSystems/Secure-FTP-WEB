@@ -4,6 +4,8 @@
 
 The Settings page includes an Application Settings section where administrators can configure global application settings, including a custom base URL for link generation.
 
+It also includes SMTP settings for system email delivery (access codes, temporary passwords, and password reset flows).
+
 ## Accessing Settings
 
 1. Log in as an administrator
@@ -222,6 +224,67 @@ To manually clear the setting:
 ```sql
 DELETE FROM app_settings WHERE setting_key = 'base_url';
 ```
+
+## SMTP Email Configuration
+
+### What SMTP is used for
+
+SMTP settings are used by the application for email delivery features such as:
+- Access code delivery
+- Temporary password delivery
+- Password reset messages
+- Future notification workflows
+
+### Required fields (when SMTP is enabled)
+
+- **SMTP Host**: Mail server hostname (example: `smtp.example.com`)
+- **SMTP Port**: Mail server port (common: `587` for TLS, `465` for SSL)
+- **Encryption**: `None`, `STARTTLS (TLS)`, or `SSL`
+- **From Email**: Sender address shown to recipients
+
+### Optional/conditional fields
+
+- **SMTP Authentication Required**: Enable if your SMTP server requires credentials
+- **SMTP Username**: Required when authentication is enabled
+- **SMTP Password**: Required when authentication is enabled
+- **From Name**: Optional display name (defaults to site name)
+
+### Saving and testing
+
+1. Go to **Settings → Application Settings → SMTP Email Settings**
+2. Enter SMTP details and click **Save SMTP Settings**
+3. Use **Send Test Email** to validate delivery to a target mailbox
+
+If a password is already saved, leave the SMTP password field blank to keep the existing value.
+
+### Troubleshooting SMTP
+
+If test email fails, verify:
+- Host, port, and encryption mode match your provider
+- Username/password are correct (if authentication is enabled)
+- Outbound firewall allows SMTP traffic to your provider
+- The SMTP server certificate is valid and trusted when TLS/SSL is used
+
+### SMTP settings stored in database
+
+SMTP values are stored in `app_settings` using these keys:
+
+- `smtp_enabled`
+- `smtp_host`
+- `smtp_port`
+- `smtp_encryption`
+- `smtp_auth_required`
+- `smtp_username`
+- `smtp_password`
+- `smtp_from_email`
+- `smtp_from_name`
+
+### SMTP password storage security
+
+- The `smtp_password` value is stored encrypted at rest (AES-256-GCM).
+- Legacy plaintext values are automatically migrated to encrypted format when read.
+- Decryption key material is derived from application configuration values in `config.php`.
+- If database credentials or related config key material changes, re-save SMTP settings to re-encrypt with the new key context.
 
 ## Future Settings
 
