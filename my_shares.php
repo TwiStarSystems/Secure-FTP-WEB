@@ -18,13 +18,6 @@ $fileManager = new FileManager($db, $auth);
 // Require authentication
 RBAC::requireAuth();
 
-// Handle logout
-if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    $auth->logout();
-    header('Location: login.php');
-    exit;
-}
-
 // Get current user info
 $currentUser = $auth->getCurrentUser();
 $isAdmin = RBAC::isAdmin();

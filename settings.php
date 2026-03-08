@@ -18,13 +18,6 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-// Handle logout
-if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    $auth->logout();
-    header('Location: login.php');
-    exit;
-}
-
 // Get current user info
 $currentUser = $auth->getCurrentUser();
 $accessCode = $auth->getCurrentAccessCode();
@@ -303,7 +296,7 @@ $csrfToken = $auth->generateCSRFToken();
                         </small>
                     </div>
                     
-                    <div class="flex gap-2">
+                    <div class="btn-row">
                         <button type="submit" class="btn btn-primary">Save Settings</button>
                         <?php if (!empty($customBaseUrl)): ?>
                             <button type="button" class="btn btn-secondary" onclick="clearBaseUrl()">Use Auto-Detection</button>

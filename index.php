@@ -20,13 +20,6 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-// Handle logout
-if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    $auth->logout();
-    header('Location: public.php');
-    exit;
-}
-
 // Handle file upload
 $uploadMessage = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'upload') {

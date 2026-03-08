@@ -183,7 +183,7 @@ $csrfToken = $auth->generateCSRFToken();
                         </small>
                     </div>
                     
-                    <div class="flex gap-2">
+                    <div class="btn-row">
                         <button type="submit" class="btn btn-primary">Save Settings</button>
                         <?php if (!empty($customBaseUrl)): ?>
                             <button type="button" class="btn btn-secondary" onclick="clearBaseUrl()">Use Auto-Detection</button>
