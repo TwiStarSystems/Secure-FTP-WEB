@@ -602,11 +602,11 @@ print_message "Setting up application directory..."
 if [ "$UPDATE_MODE" = false ]; then
     if [ -d "${APP_DIR}" ]; then
         print_message "Removing existing installation directory..."
-        rm -rf ${APP_DIR}
+        rm -rf "${APP_DIR}"
     fi
 fi
 
-mkdir -p ${APP_DIR}
+mkdir -p "${APP_DIR}"
 
 # Backup config.php and uploads in update mode
 if [ "$UPDATE_MODE" = true ]; then
@@ -616,13 +616,13 @@ if [ "$UPDATE_MODE" = true ]; then
     
     # Backup config.php if it exists
     if [ -f "${APP_DIR}/config.php" ]; then
-        cp ${APP_DIR}/config.php ${BACKUP_DIR}/config.php
+        cp "${APP_DIR}/config.php" "${BACKUP_DIR}/config.php"
         print_message "Backed up config.php"
     fi
     
     # Backup uploads directory if it exists
     if [ -d "${APP_DIR}/uploads" ]; then
-        cp -r ${APP_DIR}/uploads ${BACKUP_DIR}/uploads
+        cp -r "${APP_DIR}/uploads" "${BACKUP_DIR}/uploads"
         print_message "Backed up uploads directory"
     fi
     
@@ -636,22 +636,28 @@ print_message "Copying application files from ${SCRIPT_DIR} to ${APP_DIR}..."
 # Copy files (exclude .git, install.sh, and other non-essential files)
 # In update mode, also exclude config.php to preserve existing configuration
 if [ "$UPDATE_MODE" = true ]; then
-    rsync -av --exclude='.git' --exclude='install.sh' --exclude='*.md' --exclude='LICENSE' --exclude='config.php' --exclude='uploads' ${SCRIPT_DIR}/ ${APP_DIR}/
+    rsync -av --exclude='.git' --exclude='install.sh' --exclude='*.md' --exclude='LICENSE' --exclude='config.php' --exclude='uploads' "${SCRIPT_DIR}/" "${APP_DIR}/"
     print_message "Application files updated (config.php and uploads preserved)"
     
     # Restore config.php if backup exists
     if [ -f "${BACKUP_DIR}/config.php" ]; then
-        cp ${BACKUP_DIR}/config.php ${APP_DIR}/config.php
+        cp "${BACKUP_DIR}/config.php" "${APP_DIR}/config.php"
         print_message "Restored config.php from backup"
     fi
     
     # Restore uploads if backup exists and uploads doesn't exist in target
     if [ -d "${BACKUP_DIR}/uploads" ] && [ ! -d "${APP_DIR}/uploads" ]; then
-        cp -r ${BACKUP_DIR}/uploads ${APP_DIR}/uploads
+        cp -r "${BACKUP_DIR}/uploads" "${APP_DIR}/uploads"
         print_message "Restored uploads directory from backup"
     fi
 else
-    rsync -av --exclude='.git' --exclude='install.sh' --exclude='*.md' --exclude='LICENSE' ${SCRIPT_DIR}/ ${APP_DIR}/
+    rsync -av --exclude='.git' --exclude='install.sh' --exclude='*.md' --exclude='LICENSE' "${SCRIPT_DIR}/" "${APP_DIR}/"
+fi
+
+if [ ! -f "${APP_DIR}/index.php" ]; then
+    print_error "Deployment verification failed: ${APP_DIR}/index.php not found."
+    print_error "This usually indicates source path copy failed."
+    exit 1
 fi
 
 # Create uploads directory with proper permissions (only if it doesn't exist)
@@ -725,22 +731,22 @@ if [ "$UPDATE_MODE" = false ]; then
     print_header "STEP 12: Nginx Configuration"
     print_message "Configuring Nginx..."
     if [ -f "${APP_DIR}/secure-ftp.conf" ]; then
-        cp ${APP_DIR}/secure-ftp.conf ${NGINX_CONF}
-        
+        cp "${APP_DIR}/secure-ftp.conf" "${NGINX_CONF}"
+
         # Update domain name in nginx config
         if [ "$DOMAIN_NAME" != "_" ]; then
-            sed -i "s/server_name _;/server_name ${DOMAIN_NAME};/" ${NGINX_CONF}
+            sed -i "s/server_name _;/server_name ${DOMAIN_NAME};/" "${NGINX_CONF}"
             print_message "Domain name set to: $DOMAIN_NAME"
         fi
         
         # Update PHP-FPM socket path in nginx config
-        sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" ${NGINX_CONF}
+        sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" "${NGINX_CONF}"
         
         # Update application path in nginx config
-        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" ${NGINX_CONF}
+        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" "${NGINX_CONF}"
         
         # Enable the site
-        ln -sf ${NGINX_CONF} ${NGINX_ENABLED}
+        ln -sf "${NGINX_CONF}" "${NGINX_ENABLED}"
         
         # Disable default site if it exists
         if [ -f /etc/nginx/sites-enabled/default ]; then
@@ -778,16 +784,16 @@ else
             PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
         fi
         
-        cp ${APP_DIR}/secure-ftp.conf ${NGINX_CONF}
+        cp "${APP_DIR}/secure-ftp.conf" "${NGINX_CONF}"
         
         # Update PHP-FPM socket path in nginx config
-        sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" ${NGINX_CONF}
+        sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" "${NGINX_CONF}"
         
         # Update application path in nginx config
-        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" ${NGINX_CONF}
+        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" "${NGINX_CONF}"
         
         # Enable the site
-        ln -sf ${NGINX_CONF} ${NGINX_ENABLED}
+        ln -sf "${NGINX_CONF}" "${NGINX_ENABLED}"
         
         print_message "Nginx configuration updated"
     fi
@@ -810,15 +816,15 @@ else
     print_header "STEP 13: File Permissions"
 fi
 print_message "Setting file permissions..."
-chown -R www-data:www-data ${APP_DIR}
-chmod -R 755 ${APP_DIR}
-chmod -R 755 ${APP_DIR}/uploads
+chown -R www-data:www-data "${APP_DIR}"
+chmod -R 755 "${APP_DIR}"
+chmod -R 755 "${APP_DIR}/uploads"
 
 # Protect sensitive files
 if [ -f "${APP_DIR}/config.php" ]; then
-    chmod 600 ${APP_DIR}/config.php
+    chmod 600 "${APP_DIR}/config.php"
 fi
-chmod 600 ${APP_DIR}/database.sql 2>/dev/null || true
+chmod 600 "${APP_DIR}/database.sql" 2>/dev/null || true
 print_message "File permissions configured successfully"
 
 # Restart services
