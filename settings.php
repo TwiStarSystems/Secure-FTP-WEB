@@ -1269,9 +1269,16 @@ $csrfToken = $auth->generateCSRFToken();
         </div>
         
         <script>
+            const validSettingsTabs = ['user-settings', 'user-management', 'site-settings', 'security-events'];
+
             function switchSettingsTab(tabName) {
+                if (!validSettingsTabs.includes(tabName)) {
+                    tabName = 'user-settings';
+                }
+
                 const tabButtons = document.querySelectorAll('.settings-tab-button');
                 const tabPanels = document.querySelectorAll('.settings-tab-panel');
+                let hasActivePanel = false;
 
                 tabButtons.forEach((btn) => {
                     const isActive = btn.getAttribute('data-settings-tab') === tabName;
@@ -1281,7 +1288,15 @@ $csrfToken = $auth->generateCSRFToken();
                 tabPanels.forEach((panel) => {
                     const isActive = panel.getAttribute('data-settings-panel') === tabName;
                     panel.classList.toggle('active', isActive);
+                    if (isActive) {
+                        hasActivePanel = true;
+                    }
                 });
+
+                if (!hasActivePanel && tabName !== 'user-settings') {
+                    switchSettingsTab('user-settings');
+                    return;
+                }
 
                 try {
                     localStorage.setItem('settings_active_tab', tabName);
@@ -1321,6 +1336,11 @@ $csrfToken = $auth->generateCSRFToken();
                     }
                 } catch (error) {
                 }
+
+                if (!validSettingsTabs.includes(initialTab)) {
+                    initialTab = 'user-settings';
+                }
+
                 switchSettingsTab(initialTab);
             }
 
