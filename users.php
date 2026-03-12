@@ -10,6 +10,14 @@ class UserManager {
     
     public function __construct($db) {
         $this->db = $db;
+        $this->ensureAccessCodeSchema();
+    }
+
+    private function ensureAccessCodeSchema() {
+        $hasFileLimitColumn = $this->db->fetch("SHOW COLUMNS FROM access_codes LIKE 'file_count_limit'");
+        if (!$hasFileLimitColumn) {
+            $this->db->query("ALTER TABLE access_codes ADD COLUMN file_count_limit INT NOT NULL DEFAULT 3 AFTER upload_quota");
+        }
     }
     
     // Create new user
@@ -210,15 +218,28 @@ class UserManager {
     }
 
     // Create access code
-    public function createAccessCode($maxUses = 1, $uploadQuota = 1073741824, $expiryDate = null, $createdBy = null, $customCode = null) {
+    public function createAccessCode($maxUses = 1, $uploadQuota = 1073741824, $expiryDate = null, $createdBy = null, $customCode = null, $fileCountLimit = 3) {
         $maxUses = intval($maxUses);
-        if ($maxUses < 1) {
-            return ['success' => false, 'error' => 'Max uses must be at least 1.'];
+        if ($maxUses < 0) {
+            return ['success' => false, 'error' => 'Max uses cannot be negative.'];
+        }
+
+        if ($maxUses > 10000) {
+            return ['success' => false, 'error' => 'Max uses cannot exceed 10000.'];
+        }
+
+        if ($maxUses === 0 && empty($expiryDate)) {
+            return ['success' => false, 'error' => 'Expiry date is required when max uses is 0.'];
         }
 
         $uploadQuota = intval($uploadQuota);
         if ($uploadQuota < 1) {
             return ['success' => false, 'error' => 'Upload quota must be greater than 0.'];
+        }
+
+        $fileCountLimit = intval($fileCountLimit);
+        if ($fileCountLimit < 1 || $fileCountLimit > 10000) {
+            return ['success' => false, 'error' => 'File count limit must be between 1 and 10000.'];
         }
 
         $inputCode = $this->normalizeAccessCode($customCode);
@@ -249,10 +270,10 @@ class UserManager {
             }
         }
         
-        $sql = "INSERT INTO access_codes (code, max_uses, upload_quota, expiry_date, created_by) 
-                VALUES (?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO access_codes (code, max_uses, upload_quota, file_count_limit, expiry_date, created_by) 
+            VALUES (?, ?, ?, ?, ?, ?)";
         
-        $result = $this->db->query($sql, [$code, $maxUses, $uploadQuota, $expiryDate, $createdBy]);
+        $result = $this->db->query($sql, [$code, $maxUses, $uploadQuota, $fileCountLimit, $expiryDate, $createdBy]);
         
         if ($result) {
             return ['success' => true, 'code' => $code, 'code_id' => $this->db->lastInsertId()];
@@ -263,8 +284,16 @@ class UserManager {
     
     // Get all access codes
     public function getAllAccessCodes() {
-        $sql = "SELECT * FROM access_codes ORDER BY created_at DESC";
+        $sql = "SELECT ac.*, 
+                       (SELECT COUNT(*) FROM files f WHERE f.uploaded_by_code = ac.id) AS file_count_used
+                FROM access_codes ac
+                ORDER BY ac.created_at DESC";
         return $this->db->fetchAll($sql);
+    }
+
+    public function getAccessCodeById($codeId) {
+        $sql = "SELECT * FROM access_codes WHERE id = ? LIMIT 1";
+        return $this->db->fetch($sql, [intval($codeId)]);
     }
     
     // Delete access code

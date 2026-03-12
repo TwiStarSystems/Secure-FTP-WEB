@@ -62,6 +62,47 @@ function normalizeSecurityEventFilters($source) {
     ];
 }
 
+function isValidAccessCodeRecipientEmail($email) {
+    if (!is_string($email)) {
+        return false;
+    }
+
+    $email = strtolower(trim($email));
+    if ($email === '' || strlen($email) > 191) {
+        return false;
+    }
+
+    if (preg_match('/[\x00-\x1F\x7F\s]/', $email)) {
+        return false;
+    }
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    return preg_match('/^[a-z0-9._%+\-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i', $email) === 1;
+}
+
+function logAccessCodeEmailAudit($db, $eventType, $severity, $userId, $identifier, $context = []) {
+    $contextJson = json_encode($context);
+    if ($contextJson === false) {
+        $contextJson = '{}';
+    }
+
+    $db->query(
+        "INSERT INTO security_audit_events (event_type, severity, user_id, ip_address, identifier, context_json)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            $eventType,
+            $severity,
+            $userId,
+            $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+            $identifier,
+            $contextJson
+        ]
+    );
+}
+
 // Handle application settings updates (Admin only)
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST'
@@ -75,6 +116,7 @@ if (
         'export_security_events',
         'create_user',
         'create_access_code',
+        'email_access_code',
         'update_user',
         'delete_user',
         'delete_code'
@@ -326,14 +368,23 @@ if (
         } elseif ($_POST['action'] === 'create_access_code') {
             $expiryDate = !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null;
             $maxUses = intval($_POST['max_uses'] ?? 0);
+            $fileCountLimit = intval($_POST['file_count_limit'] ?? 3);
             $customAccessCode = strtoupper(trim($_POST['custom_access_code'] ?? ''));
 
-            if ($maxUses < 1 || $maxUses > 10000) {
-                $message = ['type' => 'error', 'message' => 'Max Uses must be between 1 and 10000.'];
+            if ($maxUses < 0 || $maxUses > 10000) {
+                $message = ['type' => 'error', 'message' => 'Max Uses must be between 0 and 10000.'];
+            }
+
+            if (!$message && $maxUses === 0 && empty($expiryDate)) {
+                $message = ['type' => 'error', 'message' => 'Expiry Date is required when Max Uses is 0.'];
             }
 
             if (!$message && $customAccessCode !== '' && !preg_match('/^[A-Z0-9]{7}$/', $customAccessCode)) {
                 $message = ['type' => 'error', 'message' => 'Custom access code must be exactly 7 alphanumeric characters.'];
+            }
+
+            if (!$message && ($fileCountLimit < 1 || $fileCountLimit > 10000)) {
+                $message = ['type' => 'error', 'message' => 'File Count Limit must be between 1 and 10000.'];
             }
             
             // Convert MB to bytes
@@ -350,13 +401,110 @@ if (
                     $uploadQuotaBytes,
                     $expiryDate,
                     $_SESSION['user_id'],
-                    $customAccessCode
+                    $customAccessCode,
+                    $fileCountLimit
                 );
             
                 if ($result['success']) {
                     $message = ['type' => 'success', 'message' => 'Access code created: ' . $result['code']];
                 } else {
                     $message = ['type' => 'error', 'message' => $result['error']];
+                }
+            }
+        } elseif ($_POST['action'] === 'email_access_code') {
+            $codeId = intval($_POST['code_id'] ?? 0);
+            $recipientEmail = strtolower(trim($_POST['recipient_email'] ?? ''));
+            $emailNote = trim($_POST['email_note'] ?? '');
+            $auditIdentifier = 'access-code-email:' . ($_SESSION['user_id'] ?? 'unknown');
+
+            if ($codeId < 1) {
+                $message = ['type' => 'error', 'message' => 'Invalid access code selected.'];
+            } elseif (!isValidAccessCodeRecipientEmail($recipientEmail)) {
+                $message = ['type' => 'error', 'message' => 'Please enter one valid recipient email address.'];
+            } else {
+                $accessCodeToEmail = $userManager->getAccessCodeById($codeId);
+                if (!$accessCodeToEmail) {
+                    $message = ['type' => 'error', 'message' => 'Access code not found.'];
+                } else {
+                    $maxUsesValue = intval($accessCodeToEmail['max_uses']);
+                    $usageLimitReached = $maxUsesValue > 0 && intval($accessCodeToEmail['current_uses']) >= $maxUsesValue;
+                    $isExpired = !empty($accessCodeToEmail['expiry_date']) && strtotime($accessCodeToEmail['expiry_date']) < time();
+
+                    if (!$accessCodeToEmail['is_active'] || $isExpired || $usageLimitReached) {
+                        $message = ['type' => 'error', 'message' => 'Cannot email an inactive, expired, or fully used access code.'];
+                    } else {
+                        $smtpMailer = new SMTPMailer($db);
+                        if (!$smtpMailer->isConfigured()) {
+                            $message = ['type' => 'error', 'message' => 'SMTP is not configured. Please configure SMTP in Settings before sending access code emails.'];
+                        } else {
+                            $codeValue = (string)$accessCodeToEmail['code'];
+                            $fileCountLimitValue = isset($accessCodeToEmail['file_count_limit']) ? intval($accessCodeToEmail['file_count_limit']) : 3;
+                            $maxUsesText = $maxUsesValue > 0 ? (string)$maxUsesValue : 'Unlimited';
+                            $expiryText = !empty($accessCodeToEmail['expiry_date'])
+                                ? date('Y-m-d H:i', strtotime($accessCodeToEmail['expiry_date']))
+                                : 'No expiry';
+                            $quotaText = $fileManager->formatBytes($accessCodeToEmail['upload_quota']);
+
+                            $subject = 'Your access code for ' . SITE_NAME;
+                            $safeCode = htmlspecialchars($codeValue);
+
+                            $htmlBody = '<p>An access code was generated for you on <strong>' . htmlspecialchars(SITE_NAME) . '</strong>.</p>'
+                                . '<p><strong>Access Code:</strong> <code style="font-size: 1.1rem;">' . $safeCode . '</code></p>'
+                                . '<p><strong>Max Uses:</strong> ' . htmlspecialchars($maxUsesText) . '<br>'
+                                . '<strong>Upload Quota:</strong> ' . htmlspecialchars($quotaText) . '<br>'
+                                . '<strong>File Count Limit:</strong> ' . htmlspecialchars((string)$fileCountLimitValue) . '<br>'
+                                . '<strong>Expiry:</strong> ' . htmlspecialchars($expiryText) . '</p>'
+                                . '<p>Use this code on the login page to access uploads and downloads.</p>';
+
+                            if ($emailNote !== '') {
+                                $htmlBody .= '<p><strong>Message:</strong><br>' . nl2br(htmlspecialchars($emailNote)) . '</p>';
+                            }
+
+                            $textBody = 'An access code was generated for you on ' . SITE_NAME . ".\n"
+                                . 'Access Code: ' . $codeValue . "\n"
+                                . 'Max Uses: ' . $maxUsesText . "\n"
+                                . 'Upload Quota: ' . $quotaText . "\n"
+                                . 'File Count Limit: ' . $fileCountLimitValue . "\n"
+                                . 'Expiry: ' . $expiryText . "\n"
+                                . 'Use this code on the login page to access uploads and downloads.';
+
+                            if ($emailNote !== '') {
+                                $textBody .= "\n\nMessage:\n" . $emailNote;
+                            }
+
+                            $mailResult = $smtpMailer->send($recipientEmail, $subject, $htmlBody, $textBody);
+                            if ($mailResult['success']) {
+                                logAccessCodeEmailAudit(
+                                    $db,
+                                    'access_code_email_sent',
+                                    'info',
+                                    $_SESSION['user_id'] ?? null,
+                                    $auditIdentifier,
+                                    [
+                                        'code_id' => $codeId,
+                                        'code' => $codeValue,
+                                        'recipient_email' => $recipientEmail
+                                    ]
+                                );
+                                $message = ['type' => 'success', 'message' => 'Access code emailed successfully to ' . $recipientEmail . '.'];
+                            } else {
+                                logAccessCodeEmailAudit(
+                                    $db,
+                                    'access_code_email_send_failed',
+                                    'warning',
+                                    $_SESSION['user_id'] ?? null,
+                                    $auditIdentifier,
+                                    [
+                                        'code_id' => $codeId,
+                                        'code' => $codeValue,
+                                        'recipient_email' => $recipientEmail,
+                                        'error' => $mailResult['error']
+                                    ]
+                                );
+                                $message = ['type' => 'error', 'message' => 'Failed to send access code email: ' . $mailResult['error']];
+                            }
+                        }
+                    }
                 }
             }
         } elseif ($_POST['action'] === 'update_user') {
@@ -1080,7 +1228,14 @@ $csrfToken = $auth->generateCSRFToken();
 
                     <div class="form-group">
                         <label for="max_uses">Max Uses</label>
-                        <input type="number" id="max_uses" name="max_uses" value="1" min="1" required>
+                        <input type="number" id="max_uses" name="max_uses" value="1" min="0" required oninput="toggleAccessCodeExpiryRequirement()">
+                        <small>Set to 0 for unlimited uses (requires expiry date).</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="file_count_limit">File Count Limit</label>
+                        <input type="number" id="file_count_limit" name="file_count_limit" value="3" min="1" required>
+                        <small>Default: 3 files</small>
                     </div>
                     
                     <div class="form-group">
@@ -1231,6 +1386,41 @@ $csrfToken = $auth->generateCSRFToken();
                 </form>
             </div>
         </div>
+
+        <div id="access-code-email-modal" class="modal" aria-hidden="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>📧 Email Access Code</h3>
+                    <button type="button" class="btn-close" onclick="closeAccessCodeEmailModal()">&times;</button>
+                </div>
+                <form method="POST">
+                    <input type="hidden" name="action" value="email_access_code">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                    <input type="hidden" id="email_code_id" name="code_id" value="">
+
+                    <div class="form-group">
+                        <label>Access Code</label>
+                        <div id="email_code_value" class="hash-display"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="recipient_email">Recipient Email</label>
+                        <input type="email" id="recipient_email" name="recipient_email" required placeholder="recipient@example.com">
+                        <small class="text-muted">Access code email is limited to one recipient per send.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="access_code_email_note">Message (optional)</label>
+                        <textarea id="access_code_email_note" name="email_note" rows="3" placeholder="Add a short message..."></textarea>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeAccessCodeEmailModal()">Cancel</button>
+                        <button type="submit" class="btn">Send Email</button>
+                    </div>
+                </form>
+            </div>
+        </div>
         
         <div class="card">
             <div class="card-header">
@@ -1243,6 +1433,7 @@ $csrfToken = $auth->generateCSRFToken();
                     <tr>
                         <th>Code</th>
                         <th>Uses</th>
+                        <th>Files</th>
                         <th>Quota</th>
                         <th>Status</th>
                         <th>Created</th>
@@ -1252,22 +1443,44 @@ $csrfToken = $auth->generateCSRFToken();
                 <tbody>
                     <?php if (empty($accessCodes)): ?>
                         <tr>
-                            <td colspan="6">No access codes created yet.</td>
+                            <td colspan="7">No access codes created yet.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($accessCodes as $code): ?>
                             <tr>
                                 <td class="code-display"><?php echo htmlspecialchars($code['code']); ?></td>
-                                <td><?php echo $code['current_uses']; ?> / <?php echo $code['max_uses']; ?></td>
+                                <td>
+                                    <?php if ((int)$code['max_uses'] > 0): ?>
+                                        <?php echo (int)$code['current_uses']; ?> / <?php echo (int)$code['max_uses']; ?>
+                                    <?php else: ?>
+                                        <?php echo (int)$code['current_uses']; ?> / Unlimited
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php
+                                        $fileCountUsed = isset($code['file_count_used']) ? (int)$code['file_count_used'] : 0;
+                                        $fileCountLimit = isset($code['file_count_limit']) ? (int)$code['file_count_limit'] : 3;
+                                    ?>
+                                    <?php echo $fileCountUsed; ?> / <?php echo $fileCountLimit; ?>
+                                </td>
                                 <td>
                                     <?php echo $fileManager->formatBytes($code['used_quota']); ?> / 
                                     <?php echo $fileManager->formatBytes($code['upload_quota']); ?>
                                 </td>
                                 <td>
-                                    <?php if ($code['is_active'] && $code['current_uses'] < $code['max_uses']): ?>
-                                        <span class="badge badge-success">Active</span>
-                                    <?php else: ?>
+                                    <?php
+                                        $maxUses = (int)$code['max_uses'];
+                                        $useLimitReached = $maxUses > 0 && (int)$code['current_uses'] >= $maxUses;
+                                        $isExpired = !empty($code['expiry_date']) && strtotime($code['expiry_date']) < time();
+                                    ?>
+                                    <?php if (!$code['is_active']): ?>
                                         <span class="badge badge-danger">Inactive</span>
+                                    <?php elseif ($useLimitReached): ?>
+                                        <span class="badge badge-warning">Use Limit Reached</span>
+                                    <?php elseif ($isExpired): ?>
+                                        <span class="badge badge-danger">Expired</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-success">Active</span>
                                     <?php endif; ?>
                                     <?php if ($code['expiry_date']): ?>
                                         <br><small>Expires: <?php echo date('Y-m-d H:i', strtotime($code['expiry_date'])); ?></small>
@@ -1275,6 +1488,14 @@ $csrfToken = $auth->generateCSRFToken();
                                 </td>
                                 <td><?php echo date('Y-m-d H:i', strtotime($code['created_at'])); ?></td>
                                 <td>
+                                    <button
+                                        type="button"
+                                        class="btn btn-small"
+                                        onclick="openAccessCodeEmailModal(this)"
+                                        data-code-id="<?php echo (int)$code['id']; ?>"
+                                        data-code-value="<?php echo htmlspecialchars($code['code']); ?>"
+                                        <?php echo (!$code['is_active'] || $useLimitReached || $isExpired) ? 'disabled title="Cannot email inactive, expired, or fully used codes."' : ''; ?>
+                                    >Email</button>
                                     <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure?')">
                                         <input type="hidden" name="action" value="delete_code">
                                         <input type="hidden" name="code_id" value="<?php echo $code['id']; ?>">
@@ -1299,7 +1520,7 @@ $csrfToken = $auth->generateCSRFToken();
                 </div>
                 <div class="card-body">
                     <p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">
-                        Email share events are included here as event types (for example: <code>email_share_sent</code>, <code>email_share_send_failed</code>, <code>email_share_create_failed</code>).
+                        Email events are included here as event types (for example: <code>email_share_sent</code>, <code>email_share_send_failed</code>, <code>email_share_create_failed</code>, <code>access_code_email_sent</code>, <code>access_code_email_send_failed</code>).
                     </p>
 
                     <form method="GET" class="form-group" style="margin-bottom: 1.25rem;">
@@ -1461,6 +1682,18 @@ $csrfToken = $auth->generateCSRFToken();
                 expiryGroup.style.display = checkbox.checked ? 'flex' : 'none';
             }
 
+            function toggleAccessCodeExpiryRequirement() {
+                const maxUsesInput = document.getElementById('max_uses');
+                const expiryInput = document.getElementById('code_expiry_date');
+
+                if (!maxUsesInput || !expiryInput) {
+                    return;
+                }
+
+                const requiresExpiry = parseInt(maxUsesInput.value || '0', 10) === 0;
+                expiryInput.required = requiresExpiry;
+            }
+
             function toggleSmtpAuthFields() {
                 const authCheckbox = document.getElementById('smtp_auth_required');
                 const authFields = document.getElementById('smtp_auth_fields');
@@ -1527,10 +1760,40 @@ $csrfToken = $auth->generateCSRFToken();
                 modal.setAttribute('aria-hidden', 'true');
             }
 
+            function openAccessCodeEmailModal(button) {
+                const modal = document.getElementById('access-code-email-modal');
+                if (!modal) {
+                    return;
+                }
+
+                document.getElementById('email_code_id').value = button.dataset.codeId || '';
+                document.getElementById('email_code_value').textContent = button.dataset.codeValue || '';
+                document.getElementById('recipient_email').value = '';
+                document.getElementById('access_code_email_note').value = '';
+
+                modal.style.display = 'flex';
+                modal.setAttribute('aria-hidden', 'false');
+            }
+
+            function closeAccessCodeEmailModal() {
+                const modal = document.getElementById('access-code-email-modal');
+                if (!modal) {
+                    return;
+                }
+
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+            }
+
             window.addEventListener('click', function (event) {
                 const modal = document.getElementById('user-edit-modal');
                 if (modal && event.target === modal) {
                     closeUserEditModal();
+                }
+
+                const accessCodeModal = document.getElementById('access-code-email-modal');
+                if (accessCodeModal && event.target === accessCodeModal) {
+                    closeAccessCodeEmailModal();
                 }
             });
 
@@ -1554,6 +1817,7 @@ $csrfToken = $auth->generateCSRFToken();
 
             toggleSmtpAuthFields();
             updateRoleLabel();
+            toggleAccessCodeExpiryRequirement();
         </script>
         <?php endif; ?>
     </div>

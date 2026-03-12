@@ -153,8 +153,8 @@ class Auth {
                 return ['success' => false, 'error' => 'Access code has expired.'];
             }
             
-            // Check if max uses reached
-            if ($accessCode['current_uses'] >= $accessCode['max_uses']) {
+            // Check if max uses reached (0 means unlimited, but expiry is required at creation time).
+            if (intval($accessCode['max_uses']) > 0 && $accessCode['current_uses'] >= $accessCode['max_uses']) {
                 $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
                 return ['success' => false, 'error' => 'Access code has reached maximum uses.'];
             }

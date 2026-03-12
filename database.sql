@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS access_codes (
     max_uses INT DEFAULT 1,
     current_uses INT DEFAULT 0,
     upload_quota BIGINT DEFAULT 1073741824,
+    file_count_limit INT DEFAULT 3,
     used_quota BIGINT DEFAULT 0,
     expiry_date DATETIME NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

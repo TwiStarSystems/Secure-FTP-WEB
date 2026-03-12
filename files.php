@@ -49,6 +49,19 @@ class FileManager {
                 return ['success' => false, 'error' => 'Upload would exceed your quota limit.'];
             }
         } elseif ($accessCode) {
+            $fileCountLimit = isset($accessCode['file_count_limit']) ? intval($accessCode['file_count_limit']) : 3;
+            if ($fileCountLimit > 0) {
+                $countRow = $this->db->fetch(
+                    "SELECT COUNT(*) AS file_count FROM files WHERE uploaded_by_code = ?",
+                    [$accessCode['id']]
+                );
+                $currentFileCount = $countRow ? intval($countRow['file_count']) : 0;
+
+                if ($currentFileCount >= $fileCountLimit) {
+                    return ['success' => false, 'error' => 'Access code file count limit reached (' . $fileCountLimit . ' files).'];
+                }
+            }
+
             if (($accessCode['used_quota'] + $file['size']) > $accessCode['upload_quota']) {
                 return ['success' => false, 'error' => 'Upload would exceed access code quota limit.'];
             }
