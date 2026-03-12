@@ -522,6 +522,7 @@ $mfaSettings = null;
 $mfaMethods = ['totp' => false, 'email' => false];
 $totpProvisioningUri = '';
 $securityEvents = [];
+$emailShareEvents = [];
 $securityEventTypes = [];
 $securityThresholdSettings = [
     'max_download_requests_window' => MAX_DOWNLOAD_REQUESTS_WINDOW,
@@ -587,6 +588,47 @@ if ($isAdmin) {
     }
 
     $securityEvents = $securityMonitor->getFilteredEvents($securityEventFilters, 250);
+
+    // Focused history for emailed share links.
+    $emailShareSql = "SELECT e.*, u.username
+                      FROM security_audit_events e
+                      LEFT JOIN users u ON e.user_id = u.id
+                      WHERE e.event_type IN ('email_share_sent', 'email_share_send_failed', 'email_share_create_failed')";
+    $emailShareParams = [];
+
+    if (!empty($securityEventFilters['severity']) && in_array($securityEventFilters['severity'], ['info', 'warning', 'critical'], true)) {
+        $emailShareSql .= " AND e.severity = ?";
+        $emailShareParams[] = $securityEventFilters['severity'];
+    }
+
+    if (!empty($securityEventFilters['date_from'])) {
+        $emailShareSql .= " AND e.created_at >= ?";
+        $emailShareParams[] = $securityEventFilters['date_from'] . ' 00:00:00';
+    }
+
+    if (!empty($securityEventFilters['date_to'])) {
+        $emailShareSql .= " AND e.created_at <= ?";
+        $emailShareParams[] = $securityEventFilters['date_to'] . ' 23:59:59';
+    }
+
+    if (!empty($securityEventFilters['search'])) {
+        $searchLike = '%' . $securityEventFilters['search'] . '%';
+        $emailShareSql .= " AND (
+            e.event_type LIKE ?
+            OR e.ip_address LIKE ?
+            OR e.identifier LIKE ?
+            OR e.context_json LIKE ?
+            OR u.username LIKE ?
+        )";
+        $emailShareParams[] = $searchLike;
+        $emailShareParams[] = $searchLike;
+        $emailShareParams[] = $searchLike;
+        $emailShareParams[] = $searchLike;
+        $emailShareParams[] = $searchLike;
+    }
+
+    $emailShareSql .= " ORDER BY e.created_at DESC LIMIT 250";
+    $emailShareEvents = $db->fetchAll($emailShareSql, $emailShareParams) ?: [];
 }
 
 // Generate CSRF token
@@ -1285,6 +1327,78 @@ $csrfToken = $auth->generateCSRFToken();
                     <h2>🛡️ Security Events</h2>
                 </div>
                 <div class="card-body">
+                    <h3>📧 Email Share History</h3>
+                    <p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">Recent `email_share_*` audit events (up to 250 rows).</p>
+
+                    <?php if (empty($emailShareEvents)): ?>
+                        <div class="alert alert-info" style="margin-top: 0;">No email share events recorded yet.</div>
+                    <?php else: ?>
+                        <div class="table-container" style="margin-bottom: 1.5rem;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Status</th>
+                                        <th>Recipient</th>
+                                        <th>User</th>
+                                        <th>File ID</th>
+                                        <th>Share ID</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($emailShareEvents as $emailEvent): ?>
+                                        <?php
+                                            $emailContext = json_decode($emailEvent['context_json'] ?? '', true);
+                                            if (!is_array($emailContext)) {
+                                                $emailContext = [];
+                                            }
+
+                                            $recipientEmail = $emailContext['recipient_email'] ?? '-';
+                                            $fileId = array_key_exists('file_id', $emailContext) ? (string)$emailContext['file_id'] : '-';
+                                            $shareId = array_key_exists('share_id', $emailContext) ? (string)$emailContext['share_id'] : '-';
+                                            $errorText = $emailContext['error'] ?? '-';
+
+                                            $statusLabel = $emailEvent['event_type'];
+                                            $statusClass = 'badge-info';
+                                            if ($emailEvent['event_type'] === 'email_share_sent') {
+                                                $statusLabel = 'Sent';
+                                                $statusClass = 'badge-success';
+                                            } elseif ($emailEvent['event_type'] === 'email_share_send_failed') {
+                                                $statusLabel = 'Send Failed';
+                                                $statusClass = 'badge-warning';
+                                            } elseif ($emailEvent['event_type'] === 'email_share_create_failed') {
+                                                $statusLabel = 'Create Failed';
+                                                $statusClass = 'badge-danger';
+                                            }
+                                        ?>
+                                        <tr>
+                                            <td><?php echo date('Y-m-d H:i:s', strtotime($emailEvent['created_at'])); ?></td>
+                                            <td><span class="badge <?php echo $statusClass; ?>"><?php echo htmlspecialchars($statusLabel); ?></span></td>
+                                            <td><?php echo htmlspecialchars($recipientEmail); ?></td>
+                                            <td><?php echo htmlspecialchars($emailEvent['username'] ?? 'System'); ?></td>
+                                            <td><?php echo htmlspecialchars($fileId); ?></td>
+                                            <td><?php echo htmlspecialchars($shareId); ?></td>
+                                            <td>
+                                                <small class="event-context" title="<?php echo htmlspecialchars($errorText); ?>">
+                                                    <?php
+                                                        $errorPreview = $errorText;
+                                                        if (strlen($errorPreview) > 80) {
+                                                            $errorPreview = substr($errorPreview, 0, 77) . '...';
+                                                        }
+                                                        echo htmlspecialchars($errorPreview);
+                                                    ?>
+                                                </small>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+
+                    <hr style="border-color: var(--color-border); margin: 1.5rem 0;">
+
                     <form method="GET" class="form-group" style="margin-bottom: 1.25rem;">
                         <input type="hidden" name="settings_tab" value="security-events">
 

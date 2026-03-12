@@ -15,6 +15,53 @@ $fileManager = new FileManager($db, $auth);
 $userManager = new UserManager($db);
 $shareManager = new ShareManager($db);
 
+/**
+ * Validate recipient email format and length for email share flow.
+ */
+function isValidShareRecipientEmail($email) {
+    if (!is_string($email)) {
+        return false;
+    }
+
+    $email = strtolower(trim($email));
+    if ($email === '' || strlen($email) > 191) {
+        return false;
+    }
+
+    if (preg_match('/[\x00-\x1F\x7F\s]/', $email)) {
+        return false;
+    }
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    return preg_match('/^[a-z0-9._%+\-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i', $email) === 1;
+}
+
+/**
+ * Best-effort security audit logging for email share delivery events.
+ */
+function logEmailShareAudit($db, $eventType, $severity, $userId, $identifier, $context = []) {
+    $contextJson = json_encode($context);
+    if ($contextJson === false) {
+        $contextJson = '{}';
+    }
+
+    $db->query(
+        "INSERT INTO security_audit_events (event_type, severity, user_id, ip_address, identifier, context_json)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            $eventType,
+            $severity,
+            $userId,
+            $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+            $identifier,
+            $contextJson
+        ]
+    );
+}
+
 // Check if logged in - redirect anonymous users to public page
 if (!$auth->isLoggedIn()) {
     header('Location: public.php');
@@ -94,66 +141,154 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $uploadMessage = ['type' => 'error', 'message' => 'Invalid request.'];
     } elseif (isset($_POST['file_id'])) {
         $currentUser = $auth->getCurrentUser();
-        $recipientEmail = trim($_POST['recipient_email'] ?? '');
+        $recipientEmailsRaw = trim($_POST['recipient_emails'] ?? '');
         $emailNote = trim($_POST['email_note'] ?? '');
 
-        if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
-            $uploadMessage = ['type' => 'error', 'message' => 'Please provide a valid recipient email address.'];
+        $recipientParts = preg_split('/[\s,;]+/', $recipientEmailsRaw, -1, PREG_SPLIT_NO_EMPTY);
+        $normalizedRecipients = [];
+        foreach ($recipientParts as $recipientPart) {
+            $email = strtolower(trim($recipientPart));
+            if ($email !== '') {
+                $normalizedRecipients[] = $email;
+            }
+        }
+        $normalizedRecipients = array_values(array_unique($normalizedRecipients));
+
+        if (empty($normalizedRecipients)) {
+            $uploadMessage = ['type' => 'error', 'message' => 'Please provide at least one recipient email address.'];
+        } elseif (count($normalizedRecipients) > 10) {
+            $uploadMessage = ['type' => 'error', 'message' => 'You can send to up to 10 recipients at once.'];
         } else {
+            foreach ($normalizedRecipients as $recipientEmailToValidate) {
+                if (!isValidShareRecipientEmail($recipientEmailToValidate)) {
+                    $uploadMessage = ['type' => 'error', 'message' => 'Invalid recipient email: ' . $recipientEmailToValidate];
+                    break;
+                }
+            }
+        }
+
+        if (!$uploadMessage) {
+            $smtpMailer = new SMTPMailer($db);
+            if (!$smtpMailer->isConfigured()) {
+                $uploadMessage = ['type' => 'error', 'message' => 'SMTP is not configured. Please configure SMTP in Settings before sending email shares.'];
+            }
+        }
+
+        if (!$uploadMessage) {
             $file = $fileManager->getFile($_POST['file_id']);
             if (!$file || !RBAC::canShareFile($file, $currentUser)) {
                 $uploadMessage = ['type' => 'error', 'message' => 'Permission denied or file not found.'];
-            } else {
+            }
+        }
+
+        if (!$uploadMessage) {
+            $sentRecipients = [];
+            $failedRecipients = [];
+            $firstShareUrl = null;
+
+            foreach ($normalizedRecipients as $recipientEmail) {
                 $shareResult = $shareManager->createShare($_POST['file_id'], $currentUser['id'], [
                     'is_public' => false,
                     'recipient_email' => $recipientEmail
                 ]);
 
                 if (!$shareResult['success']) {
-                    $uploadMessage = ['type' => 'error', 'message' => $shareResult['error']];
-                } else {
-                    $smtpMailer = new SMTPMailer($db);
-                    if (!$smtpMailer->isConfigured()) {
-                        $shareManager->deleteShare($shareResult['share_id'], $currentUser['id']);
-                        $uploadMessage = ['type' => 'error', 'message' => 'SMTP is not configured. Please configure SMTP in Settings before sending email shares.'];
-                    } else {
-                        $shareUrl = $shareResult['recipient_share_url'] ?? $shareResult['share_url'];
-                        $subject = 'Secure file shared with you: ' . $file['original_filename'];
-
-                        $safeFilename = htmlspecialchars($file['original_filename']);
-                        $safeSender = htmlspecialchars($currentUser['username']);
-                        $safeLink = htmlspecialchars($shareUrl);
-
-                        $htmlBody = '<p><strong>' . $safeSender . '</strong> shared a secure file with you.</p>'
-                            . '<p><strong>File:</strong> ' . $safeFilename . '</p>'
-                            . '<p>This is a recipient-restricted one-time link. It can be used once and should not be forwarded.</p>'
-                            . '<p><a href="' . $safeLink . '">Open secure download link</a></p>';
-
-                        if ($emailNote !== '') {
-                            $htmlBody .= '<p><strong>Message:</strong><br>' . nl2br(htmlspecialchars($emailNote)) . '</p>';
-                        }
-
-                        $textBody = $currentUser['username'] . ' shared a secure file with you.' . "\n"
-                            . 'File: ' . $file['original_filename'] . "\n"
-                            . 'Recipient-restricted one-time link: ' . $shareUrl;
-                        if ($emailNote !== '') {
-                            $textBody .= "\n\nMessage:\n" . $emailNote;
-                        }
-
-                        $mailResult = $smtpMailer->send($recipientEmail, $subject, $htmlBody, $textBody);
-                        if (!$mailResult['success']) {
-                            // Roll back share if email send fails so stale links are not left behind.
-                            $shareManager->deleteShare($shareResult['share_id'], $currentUser['id']);
-                            $uploadMessage = ['type' => 'error', 'message' => 'Failed to send email share: ' . $mailResult['error']];
-                        } else {
-                            $uploadMessage = [
-                                'type' => 'success',
-                                'message' => 'Recipient-restricted share link emailed to ' . $recipientEmail . '.',
-                                'share_url' => $shareUrl
-                            ];
-                        }
-                    }
+                    logEmailShareAudit(
+                        $db,
+                        'email_share_create_failed',
+                        'warning',
+                        $currentUser['id'] ?? null,
+                        'email-share:' . ($currentUser['id'] ?? 'unknown'),
+                        [
+                            'recipient_email' => $recipientEmail,
+                            'file_id' => (int)$_POST['file_id'],
+                            'error' => $shareResult['error']
+                        ]
+                    );
+                    $failedRecipients[] = $recipientEmail . ' (' . $shareResult['error'] . ')';
+                    continue;
                 }
+
+                $shareUrl = $shareResult['recipient_share_url'] ?? $shareResult['share_url'];
+                if ($firstShareUrl === null) {
+                    $firstShareUrl = $shareUrl;
+                }
+
+                $subject = 'Secure file shared with you: ' . $file['original_filename'];
+
+                $safeFilename = htmlspecialchars($file['original_filename']);
+                $safeSender = htmlspecialchars($currentUser['username']);
+                $safeLink = htmlspecialchars($shareUrl);
+
+                $htmlBody = '<p><strong>' . $safeSender . '</strong> shared a secure file with you.</p>'
+                    . '<p><strong>File:</strong> ' . $safeFilename . '</p>'
+                    . '<p>This is a recipient-restricted one-time link. It can be used once and should not be forwarded.</p>'
+                    . '<p><a href="' . $safeLink . '">Open secure download link</a></p>';
+
+                if ($emailNote !== '') {
+                    $htmlBody .= '<p><strong>Message:</strong><br>' . nl2br(htmlspecialchars($emailNote)) . '</p>';
+                }
+
+                $textBody = $currentUser['username'] . ' shared a secure file with you.' . "\n"
+                    . 'File: ' . $file['original_filename'] . "\n"
+                    . 'Recipient-restricted one-time link: ' . $shareUrl;
+                if ($emailNote !== '') {
+                    $textBody .= "\n\nMessage:\n" . $emailNote;
+                }
+
+                $mailResult = $smtpMailer->send($recipientEmail, $subject, $htmlBody, $textBody);
+                if (!$mailResult['success']) {
+                    // Roll back share if email send fails so stale links are not left behind.
+                    $shareManager->deleteShare($shareResult['share_id'], $currentUser['id']);
+                    logEmailShareAudit(
+                        $db,
+                        'email_share_send_failed',
+                        'warning',
+                        $currentUser['id'] ?? null,
+                        'email-share:' . ($currentUser['id'] ?? 'unknown'),
+                        [
+                            'recipient_email' => $recipientEmail,
+                            'file_id' => (int)$_POST['file_id'],
+                            'share_id' => (int)$shareResult['share_id'],
+                            'error' => $mailResult['error']
+                        ]
+                    );
+                    $failedRecipients[] = $recipientEmail . ' (' . $mailResult['error'] . ')';
+                    continue;
+                }
+
+                logEmailShareAudit(
+                    $db,
+                    'email_share_sent',
+                    'info',
+                    $currentUser['id'] ?? null,
+                    'email-share:' . ($currentUser['id'] ?? 'unknown'),
+                    [
+                        'recipient_email' => $recipientEmail,
+                        'file_id' => (int)$_POST['file_id'],
+                        'share_id' => (int)$shareResult['share_id']
+                    ]
+                );
+
+                $sentRecipients[] = $recipientEmail;
+            }
+
+            if (!empty($sentRecipients) && empty($failedRecipients)) {
+                $uploadMessage = [
+                    'type' => 'success',
+                    'message' => 'Recipient-restricted share links emailed to ' . count($sentRecipients) . ' recipient(s).',
+                    'share_url' => count($sentRecipients) === 1 ? $firstShareUrl : null
+                ];
+            } elseif (!empty($sentRecipients) && !empty($failedRecipients)) {
+                $uploadMessage = [
+                    'type' => 'error',
+                    'message' => 'Sent to ' . count($sentRecipients) . ' recipient(s), but failed for: ' . implode(', ', $failedRecipients) . '.'
+                ];
+            } else {
+                $uploadMessage = [
+                    'type' => 'error',
+                    'message' => 'Failed to send email share(s): ' . implode(', ', $failedRecipients)
+                ];
             }
         }
     }
@@ -362,8 +497,9 @@ $csrfToken = $auth->generateCSRFToken();
                 </div>
 
                 <div class="form-group">
-                    <label for="recipient_email">Recipient Email</label>
-                    <input type="email" id="recipient_email" name="recipient_email" required placeholder="recipient@example.com">
+                    <label for="recipient_emails">Recipient Emails</label>
+                    <textarea id="recipient_emails" name="recipient_emails" rows="3" required placeholder="recipient1@example.com, recipient2@example.com"></textarea>
+                    <small class="text-muted">Use commas, spaces, or new lines. Up to 10 recipients.</small>
                 </div>
 
                 <div class="form-group">
@@ -421,7 +557,7 @@ $csrfToken = $auth->generateCSRFToken();
             const modal = document.getElementById('emailShareModal');
             const fileIdInput = document.getElementById('emailShareFileId');
             const fileNameDisplay = document.getElementById('emailShareFilename');
-            const recipientInput = document.getElementById('recipient_email');
+            const recipientInput = document.getElementById('recipient_emails');
             const noteInput = document.getElementById('email_note');
 
             fileIdInput.value = fileId;

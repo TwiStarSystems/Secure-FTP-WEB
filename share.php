@@ -9,6 +9,7 @@ require_once 'rbac.php';
 class ShareManager {
     private $db;
     private const DEFAULT_RECIPIENT_TOKEN_TTL_HOURS = 168; // 7 days
+    private const MAX_RECIPIENT_EMAIL_LENGTH = 191;
     
     public function __construct($db) {
         $this->db = $db;
@@ -39,6 +40,32 @@ class ShareManager {
 
     private function normalizeEmail($email) {
         return strtolower(trim((string)$email));
+    }
+
+    /**
+     * Validate recipient email with stricter checks than filter_var alone.
+     */
+    private function isValidRecipientEmail($email) {
+        if (!is_string($email)) {
+            return false;
+        }
+
+        $email = $this->normalizeEmail($email);
+        if ($email === '' || strlen($email) > self::MAX_RECIPIENT_EMAIL_LENGTH) {
+            return false;
+        }
+
+        // Reject control characters and spaces.
+        if (preg_match('/[\x00-\x1F\x7F\s]/', $email)) {
+            return false;
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        // Keep accepted addresses predictable for this workflow.
+        return preg_match('/^[a-z0-9._%+\-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i', $email) === 1;
     }
     
     /**
@@ -72,7 +99,7 @@ class ShareManager {
         $recipientEmail = isset($options['recipient_email']) ? $this->normalizeEmail($options['recipient_email']) : '';
 
         if ($recipientEmail !== '') {
-            if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            if (!$this->isValidRecipientEmail($recipientEmail)) {
                 return ['success' => false, 'error' => 'A valid recipient email address is required.'];
             }
             // Recipient-restricted links are always private.
@@ -270,6 +297,64 @@ class ShareManager {
         }
 
         return ['success' => true];
+    }
+
+    /**
+     * Regenerate a fresh recipient-restricted one-time URL for an existing share.
+     */
+    public function regenerateRecipientShareUrl($shareId, $userId = null, $recipientEmail = null) {
+        $shareId = (int)$shareId;
+        if ($shareId < 1) {
+            return ['success' => false, 'error' => 'Invalid share ID.'];
+        }
+
+        $share = $this->db->fetch("SELECT * FROM shared_files WHERE id = ?", [$shareId]);
+        if (!$share) {
+            return ['success' => false, 'error' => 'Share not found.'];
+        }
+
+        if (!RBAC::isAdmin() && $share['shared_by_user'] !== $userId) {
+            return ['success' => false, 'error' => 'Permission denied.'];
+        }
+
+        $existingRestriction = $this->getRecipientRestriction($shareId);
+        $targetRecipient = $recipientEmail !== null && $recipientEmail !== ''
+            ? $this->normalizeEmail($recipientEmail)
+            : ($existingRestriction ? $this->normalizeEmail($existingRestriction['recipient_email']) : '');
+
+        if (!$this->isValidRecipientEmail($targetRecipient)) {
+            return ['success' => false, 'error' => 'A valid recipient email is required to regenerate the link.'];
+        }
+
+        $recipientToken = bin2hex(random_bytes(32));
+        $recipientTokenHash = hash('sha256', $recipientToken);
+        $recipientTokenExpiry = date('Y-m-d H:i:s', strtotime('+' . self::DEFAULT_RECIPIENT_TOKEN_TTL_HOURS . ' hours'));
+
+        $tokenSaved = $this->db->query(
+            "INSERT INTO share_recipient_tokens (share_id, recipient_email, token_hash, expires_at)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                recipient_email = VALUES(recipient_email),
+                token_hash = VALUES(token_hash),
+                expires_at = VALUES(expires_at),
+                used_at = NULL",
+            [$shareId, $targetRecipient, $recipientTokenHash, $recipientTokenExpiry]
+        );
+
+        if (!$tokenSaved) {
+            return ['success' => false, 'error' => 'Failed to regenerate recipient link token.'];
+        }
+
+        // Recipient-restricted links are private by design.
+        $this->db->query("UPDATE shared_files SET is_public = FALSE WHERE id = ?", [$shareId]);
+
+        $shareUrl = $this->getRecipientShareUrl($share['share_token'], $targetRecipient, $recipientToken);
+
+        return [
+            'success' => true,
+            'share_url' => $shareUrl,
+            'recipient_email' => $targetRecipient
+        ];
     }
     
     /**

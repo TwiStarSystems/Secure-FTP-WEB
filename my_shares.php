@@ -44,7 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($visibility === 'private_recipient') {
                 $isPublic = false;
                 $recipientEmail = trim($_POST['recipient_email'] ?? '');
-                if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+                $recipientEmailValid = preg_match('/^[a-z0-9._%+\-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i', $recipientEmail) === 1;
+                if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL) || !$recipientEmailValid || strlen($recipientEmail) > 191) {
                     $message = ['type' => 'error', 'message' => 'Please enter a valid recipient email for recipient-restricted links.'];
                 }
             } else {
@@ -86,6 +87,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($result['success']) {
                 $message = ['type' => 'success', 'message' => 'Share link deleted successfully!'];
+            } else {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            }
+        }
+
+        // Regenerate recipient-restricted one-time link
+        elseif ($action === 'regenerate_recipient_link' && isset($_POST['share_id'])) {
+            $result = $shareManager->regenerateRecipientShareUrl($_POST['share_id'], $currentUser['id']);
+
+            if ($result['success']) {
+                $message = [
+                    'type' => 'success',
+                    'message' => 'Recipient-restricted link regenerated successfully.',
+                    'share_url' => $result['share_url']
+                ];
             } else {
                 $message = ['type' => 'error', 'message' => $result['error']];
             }
@@ -323,6 +339,12 @@ $csrfToken = $auth->generateCSRFToken();
                                             <button type="button" class="btn btn-small" title="Recipient-restricted links are one-time and can only be copied when created." disabled>
                                                 📧
                                             </button>
+                                            <form method="POST" style="display: inline;">
+                                                <input type="hidden" name="action" value="regenerate_recipient_link">
+                                                <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
+                                                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                <button type="submit" class="btn btn-small" title="Regenerate recipient one-time URL">🔁</button>
+                                            </form>
                                         <?php endif; ?>
                                         <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this share link?')">
                                             <input type="hidden" name="action" value="delete_share">
