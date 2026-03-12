@@ -249,115 +249,117 @@ $csrfToken = $auth->generateCSRFToken();
             <?php if (empty($shares)): ?>
                 <p>No share links created yet.</p>
             <?php else: ?>
-                <table class="shares-table">
-                    <thead>
-                        <tr>
-                            <th>File</th>
-                            <?php if ($isAdmin): ?><th>Shared By</th><?php endif; ?>
-                            <th>Status</th>
-                            <th>Downloads</th>
-                            <th>Created</th>
-                            <th>Share Expires</th>
-                            <th>File Expires</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($shares as $share): ?>
-                            <tr class="<?php echo $share['is_active'] ? '' : 'inactive-row'; ?>">
-                                <td>
-                                    <div class="file-name-cell">
-                                        <?php echo htmlspecialchars($share['original_filename']); ?>
-                                        <?php if ($share['password_hash']): ?>
-                                            <span class="badge badge-warning" title="Password protected">🔐</span>
-                                        <?php endif; ?>
-                                        <?php if ($share['is_public']): ?>
-                                            <span class="badge badge-info" title="Public">🌐</span>
-                                        <?php elseif (!empty($share['recipient_email'])): ?>
-                                            <span class="badge badge-warning" title="Recipient restricted">📧 Recipient</span>
-                                        <?php else: ?>
-                                            <span class="badge" title="Private link">🔒 Private</span>
-                                        <?php endif; ?>
-                                        <?php if (!empty($share['recipient_email'])): ?>
-                                            <small class="text-muted">to <?php echo htmlspecialchars($share['recipient_email']); ?></small>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                                <?php if ($isAdmin): ?>
-                                    <td><?php echo htmlspecialchars($share['shared_by_username']); ?></td>
-                                <?php endif; ?>
-                                <td>
-                                    <?php 
-                                    $expired = $share['expires_at'] && strtotime($share['expires_at']) < time();
-                                    $limitReached = $share['max_downloads'] && $share['download_count'] >= $share['max_downloads'];
-                                    
-                                    if (!$share['is_active']): ?>
-                                        <span class="badge badge-danger">Deactivated</span>
-                                    <?php elseif ($expired): ?>
-                                        <span class="badge badge-danger">Expired</span>
-                                    <?php elseif ($limitReached): ?>
-                                        <span class="badge badge-warning">Limit Reached</span>
-                                    <?php else: ?>
-                                        <span class="badge badge-success">Active</span>
+                <div class="table-container">
+                    <table class="shares-table">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <?php if ($isAdmin): ?><th>Shared By</th><?php endif; ?>
+                                <th>Status</th>
+                                <th>Downloads</th>
+                                <th>Created</th>
+                                <th>Share Expires</th>
+                                <th>File Expires</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($shares as $share): ?>
+                                <tr class="<?php echo $share['is_active'] ? '' : 'inactive-row'; ?>">
+                                    <td>
+                                        <div class="file-name-cell">
+                                            <?php echo htmlspecialchars($share['original_filename']); ?>
+                                            <?php if ($share['password_hash']): ?>
+                                                <span class="badge badge-warning" title="Password protected">🔐</span>
+                                            <?php endif; ?>
+                                            <?php if ($share['is_public']): ?>
+                                                <span class="badge badge-info" title="Public">🌐</span>
+                                            <?php elseif (!empty($share['recipient_email'])): ?>
+                                                <span class="badge badge-warning" title="Recipient restricted">📧 Recipient</span>
+                                            <?php else: ?>
+                                                <span class="badge" title="Private link">🔒 Private</span>
+                                            <?php endif; ?>
+                                            <?php if (!empty($share['recipient_email'])): ?>
+                                                <small class="text-muted">to <?php echo htmlspecialchars($share['recipient_email']); ?></small>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <?php if ($isAdmin): ?>
+                                        <td><?php echo htmlspecialchars($share['shared_by_username']); ?></td>
                                     <?php endif; ?>
-                                </td>
-                                <td>
-                                    <?php echo $share['download_count']; ?>
-                                    <?php if ($share['max_downloads']): ?>
-                                        / <?php echo $share['max_downloads']; ?>
-                                    <?php endif; ?>
-                                </td>
-                                <td><?php echo date('M j, Y', strtotime($share['created_at'])); ?></td>
-                                <td>
-                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <?php echo $share['expires_at'] ? date('M j, Y H:i', strtotime($share['expires_at'])) : 'Never'; ?>
-                                        <button type="button" onclick="showExpiryModal(<?php echo $share['id']; ?>, 'share', '<?php echo $share['expires_at'] ? date('Y-m-d\TH:i', strtotime($share['expires_at'])) : ''; ?>')" class="btn btn-mini" title="Edit share expiry">✏️</button>
-                                    </div>
-                                </td>
-                                <td>
-                                    <?php 
-                                    // Get file expiry date
-                                    $fileSql = "SELECT file_expiry_date FROM files WHERE id = ?";
-                                    $fileExpiryData = $db->fetch($fileSql, [$share['file_id']]);
-                                    $fileExpiry = $fileExpiryData ? $fileExpiryData['file_expiry_date'] : null;
-                                    ?>
-                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <?php echo $fileExpiry ? date('M j, Y H:i', strtotime($fileExpiry)) : 'Never'; ?>
-                                        <button type="button" onclick="showExpiryModal(<?php echo $share['file_id']; ?>, 'file', '<?php echo $fileExpiry ? date('Y-m-d\TH:i', strtotime($fileExpiry)) : ''; ?>')" class="btn btn-mini" title="Edit file expiry">✏️</button>
-                                    </div>
-                                </td>
-                                <td class="actions">
-                                    <div class="actions-inline">
-                                        <?php if (empty($share['recipient_email'])): ?>
-                                            <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small" title="Copy link">
-                                                📋
-                                            </button>
-                                            <a href="shared.php?token=<?php echo htmlspecialchars($share['share_token']); ?>" class="btn btn-small" title="View" target="_blank">
-                                                👁️
-                                            </a>
+                                    <td>
+                                        <?php 
+                                        $expired = $share['expires_at'] && strtotime($share['expires_at']) < time();
+                                        $limitReached = $share['max_downloads'] && $share['download_count'] >= $share['max_downloads'];
+                                        
+                                        if (!$share['is_active']): ?>
+                                            <span class="badge badge-danger">Deactivated</span>
+                                        <?php elseif ($expired): ?>
+                                            <span class="badge badge-danger">Expired</span>
+                                        <?php elseif ($limitReached): ?>
+                                            <span class="badge badge-warning">Limit Reached</span>
                                         <?php else: ?>
-                                            <button type="button" class="btn btn-small" title="Recipient-restricted links are one-time and can only be copied when created." disabled>
-                                                📧
-                                            </button>
-                                            <form method="POST" style="display: inline;">
-                                                <input type="hidden" name="action" value="regenerate_recipient_link">
+                                            <span class="badge badge-success">Active</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php echo $share['download_count']; ?>
+                                        <?php if ($share['max_downloads']): ?>
+                                            / <?php echo $share['max_downloads']; ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo date('M j, Y', strtotime($share['created_at'])); ?></td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                            <?php echo $share['expires_at'] ? date('M j, Y H:i', strtotime($share['expires_at'])) : 'Never'; ?>
+                                            <button type="button" onclick="showExpiryModal(<?php echo $share['id']; ?>, 'share', '<?php echo $share['expires_at'] ? date('Y-m-d\TH:i', strtotime($share['expires_at'])) : ''; ?>')" class="btn btn-mini" title="Edit share expiry">✏️</button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        // Get file expiry date
+                                        $fileSql = "SELECT file_expiry_date FROM files WHERE id = ?";
+                                        $fileExpiryData = $db->fetch($fileSql, [$share['file_id']]);
+                                        $fileExpiry = $fileExpiryData ? $fileExpiryData['file_expiry_date'] : null;
+                                        ?>
+                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                            <?php echo $fileExpiry ? date('M j, Y H:i', strtotime($fileExpiry)) : 'Never'; ?>
+                                            <button type="button" onclick="showExpiryModal(<?php echo $share['file_id']; ?>, 'file', '<?php echo $fileExpiry ? date('Y-m-d\TH:i', strtotime($fileExpiry)) : ''; ?>')" class="btn btn-mini" title="Edit file expiry">✏️</button>
+                                        </div>
+                                    </td>
+                                    <td class="actions">
+                                        <div class="actions-inline">
+                                            <?php if (empty($share['recipient_email'])): ?>
+                                                <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small" title="Copy link">
+                                                    📋
+                                                </button>
+                                                <a href="shared.php?token=<?php echo htmlspecialchars($share['share_token']); ?>" class="btn btn-small" title="View" target="_blank">
+                                                    👁️
+                                                </a>
+                                            <?php else: ?>
+                                                <button type="button" class="btn btn-small" title="Recipient-restricted links are one-time and can only be copied when created." disabled>
+                                                    📧
+                                                </button>
+                                                <form method="POST" style="display: inline;">
+                                                    <input type="hidden" name="action" value="regenerate_recipient_link">
+                                                    <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                    <button type="submit" class="btn btn-small" title="Regenerate recipient one-time URL">🔁</button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this share link?')">
+                                                <input type="hidden" name="action" value="delete_share">
                                                 <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                                <button type="submit" class="btn btn-small" title="Regenerate recipient one-time URL">🔁</button>
+                                                <button type="submit" class="btn btn-small btn-danger" title="Delete">🗑️</button>
                                             </form>
-                                        <?php endif; ?>
-                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this share link?')">
-                                            <input type="hidden" name="action" value="delete_share">
-                                            <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                            <button type="submit" class="btn btn-small btn-danger" title="Delete">🗑️</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endif; ?>
         </div>
     </div>

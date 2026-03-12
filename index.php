@@ -412,70 +412,72 @@ $csrfToken = $auth->generateCSRFToken();
             <?php if (empty($files)): ?>
                 <p>No files uploaded yet.</p>
             <?php else: ?>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Filename</th>
-                            <?php if ($isAdmin): ?><th>Owner</th><?php endif; ?>
-                            <th>Size</th>
-                            <th>Hash (<?php echo strtoupper(DEFAULT_HASH_ALGORITHM); ?>)</th>
-                            <th>Uploaded</th>
-                            <th>Downloads</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($files as $file): ?>
+                <div class="table-container">
+                    <table>
+                        <thead>
                             <tr>
-                                <td><?php echo htmlspecialchars($file['original_filename']); ?></td>
-                                <?php if ($isAdmin): ?>
-                                    <td><?php echo isset($file['uploaded_by_username']) ? htmlspecialchars($file['uploaded_by_username']) : 'N/A'; ?></td>
-                                <?php endif; ?>
-                                <td><?php echo $fileManager->formatBytes($file['file_size']); ?></td>
-                                <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash']); ?>">
-                                    <span class="hash-short"><?php echo substr($file['file_hash'], 0, 16); ?>...</span>
-                                    <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($file['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
-                                </td>
-                                <td><?php echo date('Y-m-d H:i', strtotime($file['upload_date'])); ?></td>
-                                <td><?php echo $file['download_count']; ?></td>
-                                <td class="actions">
-                                    <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
-                                    <?php if ($currentUser && RBAC::canShareFile($file, $currentUser)): ?>
-                                        <?php if (isset($fileShares[$file['id']]) && $fileShares[$file['id']]): ?>
-                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove all share links for this file?')">
-                                                <input type="hidden" name="action" value="unshare">
+                                <th>Filename</th>
+                                <?php if ($isAdmin): ?><th>Owner</th><?php endif; ?>
+                                <th>Size</th>
+                                <th>Hash (<?php echo strtoupper(DEFAULT_HASH_ALGORITHM); ?>)</th>
+                                <th>Uploaded</th>
+                                <th>Downloads</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($files as $file): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($file['original_filename']); ?></td>
+                                    <?php if ($isAdmin): ?>
+                                        <td><?php echo isset($file['uploaded_by_username']) ? htmlspecialchars($file['uploaded_by_username']) : 'N/A'; ?></td>
+                                    <?php endif; ?>
+                                    <td><?php echo $fileManager->formatBytes($file['file_size']); ?></td>
+                                    <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash']); ?>">
+                                        <span class="hash-short"><?php echo substr($file['file_hash'], 0, 16); ?>...</span>
+                                        <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($file['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
+                                    </td>
+                                    <td><?php echo date('Y-m-d H:i', strtotime($file['upload_date'])); ?></td>
+                                    <td><?php echo $file['download_count']; ?></td>
+                                    <td class="actions">
+                                        <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
+                                        <?php if ($currentUser && RBAC::canShareFile($file, $currentUser)): ?>
+                                            <?php if (isset($fileShares[$file['id']]) && $fileShares[$file['id']]): ?>
+                                                <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove all share links for this file?')">
+                                                    <input type="hidden" name="action" value="unshare">
+                                                    <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                    <button type="submit" class="btn btn-small btn-warning" title="Remove share links">Unshare</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <form method="POST" style="display: inline;">
+                                                    <input type="hidden" name="action" value="quick_share">
+                                                    <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                    <button type="submit" class="btn btn-small btn-share" title="Create share link">Share</button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <button
+                                                type="button"
+                                                class="btn btn-small"
+                                                title="Email recipient-restricted link"
+                                                onclick="openEmailShareModal(<?php echo (int)$file['id']; ?>, '<?php echo htmlspecialchars($file['original_filename'], ENT_QUOTES); ?>')"
+                                            >Email</button>
+                                        <?php endif; ?>
+                                        <?php if ($currentUser && RBAC::canDeleteFile($file, $currentUser)): ?>
+                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">
+                                                <input type="hidden" name="action" value="delete">
                                                 <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                                <button type="submit" class="btn btn-small btn-warning" title="Remove share links">Unshare</button>
-                                            </form>
-                                        <?php else: ?>
-                                            <form method="POST" style="display: inline;">
-                                                <input type="hidden" name="action" value="quick_share">
-                                                <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
-                                                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                                <button type="submit" class="btn btn-small btn-share" title="Create share link">Share</button>
+                                                <button type="submit" class="btn btn-small btn-danger">Delete</button>
                                             </form>
                                         <?php endif; ?>
-                                        <button
-                                            type="button"
-                                            class="btn btn-small"
-                                            title="Email recipient-restricted link"
-                                            onclick="openEmailShareModal(<?php echo (int)$file['id']; ?>, '<?php echo htmlspecialchars($file['original_filename'], ENT_QUOTES); ?>')"
-                                        >Email</button>
-                                    <?php endif; ?>
-                                    <?php if ($currentUser && RBAC::canDeleteFile($file, $currentUser)): ?>
-                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">
-                                            <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="file_id" value="<?php echo $file['id']; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                            <button type="submit" class="btn btn-small btn-danger">Delete</button>
-                                        </form>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endif; ?>
         </div>
     </div>

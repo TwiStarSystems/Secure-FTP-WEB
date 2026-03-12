@@ -326,9 +326,14 @@ if (
         } elseif ($_POST['action'] === 'create_access_code') {
             $expiryDate = !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null;
             $maxUses = intval($_POST['max_uses'] ?? 0);
+            $customAccessCode = strtoupper(trim($_POST['custom_access_code'] ?? ''));
 
             if ($maxUses < 1 || $maxUses > 10000) {
                 $message = ['type' => 'error', 'message' => 'Max Uses must be between 1 and 10000.'];
+            }
+
+            if (!$message && $customAccessCode !== '' && !preg_match('/^[A-Z0-9]{7}$/', $customAccessCode)) {
+                $message = ['type' => 'error', 'message' => 'Custom access code must be exactly 7 alphanumeric characters.'];
             }
             
             // Convert MB to bytes
@@ -344,7 +349,8 @@ if (
                     $maxUses,
                     $uploadQuotaBytes,
                     $expiryDate,
-                    $_SESSION['user_id']
+                    $_SESSION['user_id'],
+                    $customAccessCode
                 );
             
                 if ($result['success']) {
@@ -522,7 +528,6 @@ $mfaSettings = null;
 $mfaMethods = ['totp' => false, 'email' => false];
 $totpProvisioningUri = '';
 $securityEvents = [];
-$emailShareEvents = [];
 $securityEventTypes = [];
 $securityThresholdSettings = [
     'max_download_requests_window' => MAX_DOWNLOAD_REQUESTS_WINDOW,
@@ -589,46 +594,6 @@ if ($isAdmin) {
 
     $securityEvents = $securityMonitor->getFilteredEvents($securityEventFilters, 250);
 
-    // Focused history for emailed share links.
-    $emailShareSql = "SELECT e.*, u.username
-                      FROM security_audit_events e
-                      LEFT JOIN users u ON e.user_id = u.id
-                      WHERE e.event_type IN ('email_share_sent', 'email_share_send_failed', 'email_share_create_failed')";
-    $emailShareParams = [];
-
-    if (!empty($securityEventFilters['severity']) && in_array($securityEventFilters['severity'], ['info', 'warning', 'critical'], true)) {
-        $emailShareSql .= " AND e.severity = ?";
-        $emailShareParams[] = $securityEventFilters['severity'];
-    }
-
-    if (!empty($securityEventFilters['date_from'])) {
-        $emailShareSql .= " AND e.created_at >= ?";
-        $emailShareParams[] = $securityEventFilters['date_from'] . ' 00:00:00';
-    }
-
-    if (!empty($securityEventFilters['date_to'])) {
-        $emailShareSql .= " AND e.created_at <= ?";
-        $emailShareParams[] = $securityEventFilters['date_to'] . ' 23:59:59';
-    }
-
-    if (!empty($securityEventFilters['search'])) {
-        $searchLike = '%' . $securityEventFilters['search'] . '%';
-        $emailShareSql .= " AND (
-            e.event_type LIKE ?
-            OR e.ip_address LIKE ?
-            OR e.identifier LIKE ?
-            OR e.context_json LIKE ?
-            OR u.username LIKE ?
-        )";
-        $emailShareParams[] = $searchLike;
-        $emailShareParams[] = $searchLike;
-        $emailShareParams[] = $searchLike;
-        $emailShareParams[] = $searchLike;
-        $emailShareParams[] = $searchLike;
-    }
-
-    $emailShareSql .= " ORDER BY e.created_at DESC LIMIT 250";
-    $emailShareEvents = $db->fetchAll($emailShareSql, $emailShareParams) ?: [];
 }
 
 // Generate CSRF token
@@ -1108,6 +1073,12 @@ $csrfToken = $auth->generateCSRFToken();
                 
                 <div class="form-grid">
                     <div class="form-group">
+                        <label for="custom_access_code">Custom Code (optional)</label>
+                        <input type="text" id="custom_access_code" name="custom_access_code" maxlength="7" pattern="[A-Za-z0-9]{7}" placeholder="ABC1234" style="text-transform: uppercase;">
+                        <small>Leave blank to auto-generate a random 7-character code.</small>
+                    </div>
+
+                    <div class="form-group">
                         <label for="max_uses">Max Uses</label>
                         <input type="number" id="max_uses" name="max_uses" value="1" min="1" required>
                     </div>
@@ -1327,77 +1298,9 @@ $csrfToken = $auth->generateCSRFToken();
                     <h2>🛡️ Security Events</h2>
                 </div>
                 <div class="card-body">
-                    <h3>📧 Email Share History</h3>
-                    <p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">Recent `email_share_*` audit events (up to 250 rows).</p>
-
-                    <?php if (empty($emailShareEvents)): ?>
-                        <div class="alert alert-info" style="margin-top: 0;">No email share events recorded yet.</div>
-                    <?php else: ?>
-                        <div class="table-container" style="margin-bottom: 1.5rem;">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Time</th>
-                                        <th>Status</th>
-                                        <th>Recipient</th>
-                                        <th>User</th>
-                                        <th>File ID</th>
-                                        <th>Share ID</th>
-                                        <th>Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($emailShareEvents as $emailEvent): ?>
-                                        <?php
-                                            $emailContext = json_decode($emailEvent['context_json'] ?? '', true);
-                                            if (!is_array($emailContext)) {
-                                                $emailContext = [];
-                                            }
-
-                                            $recipientEmail = $emailContext['recipient_email'] ?? '-';
-                                            $fileId = array_key_exists('file_id', $emailContext) ? (string)$emailContext['file_id'] : '-';
-                                            $shareId = array_key_exists('share_id', $emailContext) ? (string)$emailContext['share_id'] : '-';
-                                            $errorText = $emailContext['error'] ?? '-';
-
-                                            $statusLabel = $emailEvent['event_type'];
-                                            $statusClass = 'badge-info';
-                                            if ($emailEvent['event_type'] === 'email_share_sent') {
-                                                $statusLabel = 'Sent';
-                                                $statusClass = 'badge-success';
-                                            } elseif ($emailEvent['event_type'] === 'email_share_send_failed') {
-                                                $statusLabel = 'Send Failed';
-                                                $statusClass = 'badge-warning';
-                                            } elseif ($emailEvent['event_type'] === 'email_share_create_failed') {
-                                                $statusLabel = 'Create Failed';
-                                                $statusClass = 'badge-danger';
-                                            }
-                                        ?>
-                                        <tr>
-                                            <td><?php echo date('Y-m-d H:i:s', strtotime($emailEvent['created_at'])); ?></td>
-                                            <td><span class="badge <?php echo $statusClass; ?>"><?php echo htmlspecialchars($statusLabel); ?></span></td>
-                                            <td><?php echo htmlspecialchars($recipientEmail); ?></td>
-                                            <td><?php echo htmlspecialchars($emailEvent['username'] ?? 'System'); ?></td>
-                                            <td><?php echo htmlspecialchars($fileId); ?></td>
-                                            <td><?php echo htmlspecialchars($shareId); ?></td>
-                                            <td>
-                                                <small class="event-context" title="<?php echo htmlspecialchars($errorText); ?>">
-                                                    <?php
-                                                        $errorPreview = $errorText;
-                                                        if (strlen($errorPreview) > 80) {
-                                                            $errorPreview = substr($errorPreview, 0, 77) . '...';
-                                                        }
-                                                        echo htmlspecialchars($errorPreview);
-                                                    ?>
-                                                </small>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php endif; ?>
-
-                    <hr style="border-color: var(--color-border); margin: 1.5rem 0;">
+                    <p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">
+                        Email share events are included here as event types (for example: <code>email_share_sent</code>, <code>email_share_send_failed</code>, <code>email_share_create_failed</code>).
+                    </p>
 
                     <form method="GET" class="form-group" style="margin-bottom: 1.25rem;">
                         <input type="hidden" name="settings_tab" value="security-events">
@@ -1439,7 +1342,7 @@ $csrfToken = $auth->generateCSRFToken();
                         <div class="form-grid">
                             <div class="form-group">
                                 <label for="security_search">Search</label>
-                                <input type="text" id="security_search" name="security_search" value="<?php echo htmlspecialchars($securityEventFilters['search']); ?>" placeholder="Event, username, IP, identifier, context">
+                                <input type="text" id="security_search" name="security_search" value="<?php echo htmlspecialchars($securityEventFilters['search']); ?>" placeholder="Event, username, IP, identifier, recipient email, context">
                             </div>
                         </div>
 

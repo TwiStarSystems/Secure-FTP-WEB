@@ -913,6 +913,18 @@ input[type="file"]:hover {
   width: auto;
 }
 
+.actions,
+.actions-inline {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.actions form,
+.actions-inline form {
+  margin: 0;
+}
+
 /* Admin link in header */
 .admin-link {
   background: rgba(150, 0, 225, 0.2);
@@ -1636,5 +1648,150 @@ body {
 .btn-warning:hover {
   background: linear-gradient(135deg, #ff9922 0%, #ff7722 100%);
   box-shadow: 0 4px 20px rgba(255, 136, 0, 0.4);
+}
+
+/* Mobile usability refinements while preserving desktop layout */
+@media (max-width: 900px) {
+  .header {
+    position: static;
+    min-height: auto;
+  }
+
+  .header-content {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 8px;
+  }
+
+  .header h1 {
+    width: 100%;
+    font-size: 1.15rem;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .header-right {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 0;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .header-btn {
+    padding: 0.55rem 0.65rem;
+    font-size: 0.9rem;
+  }
+
+  .user-info {
+    width: 100%;
+    justify-content: space-between;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .user-details {
+    align-items: flex-start;
+  }
+
+  .container,
+  .dashboard-container {
+    padding: 0 var(--spacing-sm);
+  }
+
+  .card {
+    padding: var(--spacing-md);
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .info-item {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .modal-content {
+    width: calc(100% - 1rem);
+    padding: var(--spacing-md);
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .modal-actions .btn {
+    flex: 1 1 140px;
+  }
+
+  .actions,
+  .actions-inline,
+  .btn-row {
+    gap: 0.4rem;
+  }
+
+  .actions .btn,
+  .actions-inline .btn,
+  .btn-row .btn {
+    width: auto;
+    min-width: 0;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 720px;
+  }
+
+  .shares-table {
+    min-width: 860px;
+  }
+
+  .file-card .file-meta {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .login-container,
+  .login-container.white-bg {
+    padding: var(--spacing-md);
+  }
+
+  .tabs {
+    gap: 0.35rem;
+  }
+
+  .tab {
+    padding: 0.55rem 0.25rem;
+    font-size: 0.9rem;
+  }
+
+  .header-btn {
+    flex: 1 1 calc(50% - 0.5rem);
+    justify-content: center;
+    min-width: 130px;
+  }
+
+  .user-info {
+    flex: 1 1 100%;
+  }
+
+  .settings-tab-button {
+    flex: 1 1 48%;
+    text-align: center;
+  }
+
+  .detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+  }
 }
 

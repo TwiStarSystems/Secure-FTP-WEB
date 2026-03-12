@@ -5,6 +5,8 @@ require_once 'rbac.php';
 
 class UserManager {
     private $db;
+    private const ACCESS_CODE_LENGTH = 7;
+    private const ACCESS_CODE_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     
     public function __construct($db) {
         $this->db = $db;
@@ -183,8 +185,32 @@ class UserManager {
         return $this->db->fetch($sql, [$userId]);
     }
     
+    private function normalizeAccessCode($code) {
+        return strtoupper(trim((string)$code));
+    }
+
+    private function isValidAccessCode($code) {
+        return preg_match('/^[A-Z0-9]{' . self::ACCESS_CODE_LENGTH . '}$/', $code) === 1;
+    }
+
+    private function accessCodeExists($code) {
+        $row = $this->db->fetch("SELECT id FROM access_codes WHERE code = ? LIMIT 1", [$code]);
+        return !empty($row);
+    }
+
+    private function generateRandomAccessCode() {
+        $maxIndex = strlen(self::ACCESS_CODE_CHARSET) - 1;
+        $code = '';
+
+        for ($i = 0; $i < self::ACCESS_CODE_LENGTH; $i++) {
+            $code .= self::ACCESS_CODE_CHARSET[random_int(0, $maxIndex)];
+        }
+
+        return $code;
+    }
+
     // Create access code
-    public function createAccessCode($maxUses = 1, $uploadQuota = 1073741824, $expiryDate = null, $createdBy = null) {
+    public function createAccessCode($maxUses = 1, $uploadQuota = 1073741824, $expiryDate = null, $createdBy = null, $customCode = null) {
         $maxUses = intval($maxUses);
         if ($maxUses < 1) {
             return ['success' => false, 'error' => 'Max uses must be at least 1.'];
@@ -195,8 +221,33 @@ class UserManager {
             return ['success' => false, 'error' => 'Upload quota must be greater than 0.'];
         }
 
-        // Generate random access code
-        $code = bin2hex(random_bytes(16));
+        $inputCode = $this->normalizeAccessCode($customCode);
+        $code = '';
+
+        if ($inputCode !== '') {
+            if (!$this->isValidAccessCode($inputCode)) {
+                return ['success' => false, 'error' => 'Access code must be exactly 7 alphanumeric characters.'];
+            }
+
+            if ($this->accessCodeExists($inputCode)) {
+                return ['success' => false, 'error' => 'Access code already exists. Please choose a different code.'];
+            }
+
+            $code = $inputCode;
+        } else {
+            // Generate a unique random code with bounded retries.
+            for ($attempt = 0; $attempt < 30; $attempt++) {
+                $candidate = $this->generateRandomAccessCode();
+                if (!$this->accessCodeExists($candidate)) {
+                    $code = $candidate;
+                    break;
+                }
+            }
+
+            if ($code === '') {
+                return ['success' => false, 'error' => 'Failed to generate a unique access code. Please try again.'];
+            }
+        }
         
         $sql = "INSERT INTO access_codes (code, max_uses, upload_quota, expiry_date, created_by) 
                 VALUES (?, ?, ?, ?, ?)";

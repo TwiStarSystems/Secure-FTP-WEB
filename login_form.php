@@ -91,7 +91,7 @@
                 
                 <div class="form-group">
                     <label for="access_code">Access Code</label>
-                    <input type="text" id="access_code" name="access_code" required>
+                    <input type="text" id="access_code" name="access_code" required maxlength="7" minlength="7" pattern="[A-Za-z0-9]{7}" placeholder="ABC1234" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
                 </div>
                 
                 <button type="submit" class="btn">Access</button>

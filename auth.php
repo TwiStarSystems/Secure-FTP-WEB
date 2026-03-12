@@ -124,6 +124,8 @@ class Auth {
     
     // Access code login
     public function loginWithAccessCode($code) {
+        $code = strtoupper(trim((string)$code));
+
         $clientIp = $this->getClientIp();
         $identifier = 'login_code:' . $clientIp;
         $ipIdentifier = 'login_ip:' . $clientIp;
@@ -131,6 +133,11 @@ class Auth {
         // Check rate limiting
         if ($this->isRateLimited($identifier) || $this->isRateLimited($ipIdentifier)) {
             return ['success' => false, 'error' => 'Too many failed attempts. Please try again later.'];
+        }
+
+        if (!preg_match('/^[A-Z0-9]{7}$/', $code)) {
+            $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
+            return ['success' => false, 'error' => 'Access code must be exactly 7 alphanumeric characters.'];
         }
         
         // Clean up expired codes
