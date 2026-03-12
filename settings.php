@@ -1229,7 +1229,7 @@ $csrfToken = $auth->generateCSRFToken();
                     <div class="form-group">
                         <label for="max_uses">Max Uses</label>
                         <input type="number" id="max_uses" name="max_uses" value="1" min="0" required oninput="toggleAccessCodeExpiryRequirement()">
-                        <small>Set to 0 for unlimited uses (requires expiry date).</small>
+                        <small>Set to 0 for unlimited uses (requires expiry date)</small>
                     </div>
 
                     <div class="form-group">
@@ -1245,8 +1245,9 @@ $csrfToken = $auth->generateCSRFToken();
                     </div>
                     
                     <div class="form-group">
-                        <label for="code_expiry_date">Expiry Date (optional)</label>
+                        <label for="code_expiry_date">Expiry Date</label>
                         <input type="datetime-local" id="code_expiry_date" name="expiry_date">
+                        <small>Leave blank for no expiry. (Required if Max Uses is 0)</small>
                     </div>
                 </div>
                 
