@@ -75,6 +75,7 @@ if (
         'export_security_events',
         'create_user',
         'create_access_code',
+        'update_user',
         'delete_user',
         'delete_code'
     ], true)
@@ -324,22 +325,91 @@ if (
             }
         } elseif ($_POST['action'] === 'create_access_code') {
             $expiryDate = !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null;
+            $maxUses = intval($_POST['max_uses'] ?? 0);
+
+            if ($maxUses < 1 || $maxUses > 10000) {
+                $message = ['type' => 'error', 'message' => 'Max Uses must be between 1 and 10000.'];
+            }
             
             // Convert MB to bytes
             $uploadQuotaMB = floatval($_POST['upload_quota']);
             $uploadQuotaBytes = intval($uploadQuotaMB * 1024 * 1024);
+
+            if (!$message && $uploadQuotaBytes < 1) {
+                $message = ['type' => 'error', 'message' => 'Upload quota must be greater than 0 MB.'];
+            }
             
-            $result = $userManager->createAccessCode(
-                intval($_POST['max_uses']),
-                $uploadQuotaBytes,
-                $expiryDate,
-                $_SESSION['user_id']
-            );
+            if (!$message) {
+                $result = $userManager->createAccessCode(
+                    $maxUses,
+                    $uploadQuotaBytes,
+                    $expiryDate,
+                    $_SESSION['user_id']
+                );
             
-            if ($result['success']) {
-                $message = ['type' => 'success', 'message' => 'Access code created: ' . $result['code']];
+                if ($result['success']) {
+                    $message = ['type' => 'success', 'message' => 'Access code created: ' . $result['code']];
+                } else {
+                    $message = ['type' => 'error', 'message' => $result['error']];
+                }
+            }
+        } elseif ($_POST['action'] === 'update_user') {
+            $targetUserId = intval($_POST['user_id'] ?? 0);
+            $targetUser = $targetUserId > 0 ? $userManager->getUser($targetUserId) : null;
+
+            if (!$targetUser) {
+                $message = ['type' => 'error', 'message' => 'User not found.'];
             } else {
-                $message = ['type' => 'error', 'message' => $result['error']];
+                $username = trim($_POST['edit_username'] ?? '');
+                $email = trim($_POST['edit_email'] ?? '');
+                $newPassword = trim($_POST['edit_password'] ?? '');
+                $quotaMb = floatval($_POST['edit_upload_quota'] ?? 0);
+                $quotaBytes = intval($quotaMb * 1024 * 1024);
+                $role = isset($_POST['edit_is_admin']) ? 'admin' : 'user';
+                $clearMfa = isset($_POST['clear_mfa']);
+
+                if ($username === '') {
+                    $message = ['type' => 'error', 'message' => 'Username is required.'];
+                } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $message = ['type' => 'error', 'message' => 'Please enter a valid email address.'];
+                } elseif ($quotaBytes < 1) {
+                    $message = ['type' => 'error', 'message' => 'Upload quota must be at least 1 MB.'];
+                } elseif (!in_array($role, ['admin', 'user'], true)) {
+                    $message = ['type' => 'error', 'message' => 'Invalid user role.'];
+                } elseif ($newPassword !== '' && strlen($newPassword) < 8) {
+                    $message = ['type' => 'error', 'message' => 'New password must be at least 8 characters long.'];
+                }
+
+                if (!$message) {
+                    $updateData = [
+                        'username' => $username,
+                        'email' => $email,
+                        'upload_quota' => $quotaBytes,
+                        'role' => $role
+                    ];
+
+                    if ($newPassword !== '') {
+                        $updateData['password'] = $newPassword;
+                    }
+
+                    $result = $userManager->updateUser($targetUserId, $updateData);
+                    if (!$result['success']) {
+                        $message = ['type' => 'error', 'message' => $result['error']];
+                    } else {
+                        $mfaCleared = true;
+                        if ($clearMfa) {
+                            $mfaCleared = $mfaService->disableTotpForUser($targetUserId)
+                                && $mfaService->disableEmailForUser($targetUserId)
+                                && $db->query("DELETE FROM mfa_email_codes WHERE user_id = ?", [$targetUserId]);
+                        }
+
+                        if ($clearMfa && !$mfaCleared) {
+                            $message = ['type' => 'warning', 'message' => 'User updated, but MFA clearing did not fully complete.'];
+                        } else {
+                            $message = ['type' => 'success', 'message' => 'User updated successfully!'];
+                        }
+                    }
+                }
             }
         } elseif ($_POST['action'] === 'delete_user') {
             $result = $userManager->deleteUser($_POST['user_id']);
@@ -1068,6 +1138,17 @@ $csrfToken = $auth->generateCSRFToken();
                             </td>
                             <td><?php echo $user['last_login'] ? date('Y-m-d H:i', strtotime($user['last_login'])) : 'Never'; ?></td>
                             <td>
+                                <?php $userQuotaMb = round(((float)$user['upload_quota']) / 1024 / 1024, 2); ?>
+                                <button
+                                    type="button"
+                                    class="btn btn-small"
+                                    onclick="openUserEditModal(this)"
+                                    data-user-id="<?php echo (int)$user['id']; ?>"
+                                    data-username="<?php echo htmlspecialchars($user['username']); ?>"
+                                    data-email="<?php echo htmlspecialchars($user['email'] ?? ''); ?>"
+                                    data-upload-quota="<?php echo htmlspecialchars((string)$userQuotaMb); ?>"
+                                    data-role="<?php echo htmlspecialchars($userRole); ?>"
+                                >Edit</button>
                                 <?php if ($user['username'] !== 'admin'): ?>
                                     <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure?')">
                                         <input type="hidden" name="action" value="delete_user">
@@ -1082,6 +1163,59 @@ $csrfToken = $auth->generateCSRFToken();
                 </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <div id="user-edit-modal" class="modal" aria-hidden="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>✏️ Edit User</h3>
+                    <button type="button" class="btn-close" onclick="closeUserEditModal()">&times;</button>
+                </div>
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_user">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                    <input type="hidden" id="edit_user_id" name="user_id" value="">
+
+                    <div class="form-group">
+                        <label for="edit_username">Username</label>
+                        <input type="text" id="edit_username" name="edit_username" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit_email">Email</label>
+                        <input type="email" id="edit_email" name="edit_email">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit_password">Reset Password</label>
+                        <input type="password" id="edit_password" name="edit_password" minlength="8" placeholder="Leave empty to keep current password">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit_upload_quota">Upload Quota (MB)</label>
+                        <input type="number" id="edit_upload_quota" name="edit_upload_quota" min="1" step="0.01" required>
+                    </div>
+
+                    <div class="form-group role-toggle">
+                        <label for="edit_is_admin" style="margin: 0;">Account Type</label>
+                        <label class="switch">
+                            <input type="checkbox" id="edit_is_admin" name="edit_is_admin" value="1" onchange="updateRoleLabel()">
+                            <span class="slider"></span>
+                        </label>
+                        <span id="edit_role_label" class="badge badge-info">User</span>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="clear_mfa" name="clear_mfa" value="1">
+                        <label for="clear_mfa" style="margin: 0;">Clear MFA (TOTP + Email)</label>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeUserEditModal()">Cancel</button>
+                        <button type="submit" class="btn">Save Changes</button>
+                    </div>
+                </form>
             </div>
         </div>
         
@@ -1326,6 +1460,63 @@ $csrfToken = $auth->generateCSRFToken();
                 document.getElementById('base_url').closest('form').submit();
             }
 
+            function updateRoleLabel() {
+                const roleToggle = document.getElementById('edit_is_admin');
+                const roleLabel = document.getElementById('edit_role_label');
+
+                if (!roleToggle || !roleLabel) {
+                    return;
+                }
+
+                if (roleToggle.checked) {
+                    roleLabel.textContent = 'Admin';
+                    roleLabel.classList.remove('badge-info');
+                    roleLabel.classList.add('badge-danger');
+                } else {
+                    roleLabel.textContent = 'User';
+                    roleLabel.classList.remove('badge-danger');
+                    roleLabel.classList.add('badge-info');
+                }
+            }
+
+            function openUserEditModal(button) {
+                const modal = document.getElementById('user-edit-modal');
+                if (!modal) {
+                    return;
+                }
+
+                document.getElementById('edit_user_id').value = button.dataset.userId || '';
+                document.getElementById('edit_username').value = button.dataset.username || '';
+                document.getElementById('edit_email').value = button.dataset.email || '';
+                document.getElementById('edit_upload_quota').value = button.dataset.uploadQuota || '1024';
+                document.getElementById('edit_password').value = '';
+                document.getElementById('clear_mfa').checked = false;
+
+                const role = (button.dataset.role || 'user').toLowerCase();
+                document.getElementById('edit_is_admin').checked = role === 'admin';
+                updateRoleLabel();
+
+                modal.style.display = 'flex';
+                modal.setAttribute('aria-hidden', 'false');
+            }
+
+            function closeUserEditModal() {
+                const modal = document.getElementById('user-edit-modal');
+                if (!modal) {
+                    return;
+                }
+
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+            }
+
+            window.addEventListener('click', function (event) {
+                const modal = document.getElementById('user-edit-modal');
+                if (modal && event.target === modal) {
+                    closeUserEditModal();
+                }
+            });
+
             const hasSettingsTabs = document.querySelector('.settings-tab-button') !== null;
             if (hasSettingsTabs) {
                 let initialTab = '<?php echo (isset($_GET['settings_tab']) && in_array($_GET['settings_tab'], ['user-settings', 'user-management', 'site-settings', 'security-events'], true)) ? htmlspecialchars($_GET['settings_tab']) : 'user-settings'; ?>';
@@ -1345,6 +1536,7 @@ $csrfToken = $auth->generateCSRFToken();
             }
 
             toggleSmtpAuthFields();
+            updateRoleLabel();
         </script>
         <?php endif; ?>
     </div>

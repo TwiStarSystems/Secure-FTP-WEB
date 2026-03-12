@@ -34,23 +34,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Create new share
         if ($action === 'create_share' && isset($_POST['file_id'])) {
-            $options = [
-                'is_public' => isset($_POST['is_public']),
-                'password' => $_POST['password'] ?? '',
-                'expires_at' => !empty($_POST['expires_at']) ? $_POST['expires_at'] : null,
-                'max_downloads' => !empty($_POST['max_downloads']) ? (int)$_POST['max_downloads'] : null
-            ];
-            
-            $result = $shareManager->createShare($_POST['file_id'], $currentUser['id'], $options);
-            
-            if ($result['success']) {
-                $message = [
-                    'type' => 'success', 
-                    'message' => 'Share link created successfully!',
-                    'share_url' => $result['share_url']
-                ];
+            $visibility = $_POST['visibility'] ?? null;
+            if ($visibility === 'public') {
+                $isPublic = true;
+                $recipientEmail = null;
+            } elseif ($visibility === 'private') {
+                $isPublic = false;
+                $recipientEmail = null;
+            } elseif ($visibility === 'private_recipient') {
+                $isPublic = false;
+                $recipientEmail = trim($_POST['recipient_email'] ?? '');
+                if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+                    $message = ['type' => 'error', 'message' => 'Please enter a valid recipient email for recipient-restricted links.'];
+                }
             } else {
-                $message = ['type' => 'error', 'message' => $result['error']];
+                // Backward compatibility for older form submissions.
+                $isPublic = isset($_POST['is_public']);
+                $recipientEmail = null;
+            }
+
+            if (!$message) {
+                $options = [
+                    'is_public' => $isPublic,
+                    'password' => $_POST['password'] ?? '',
+                    'expires_at' => !empty($_POST['expires_at']) ? $_POST['expires_at'] : null,
+                    'max_downloads' => !empty($_POST['max_downloads']) ? (int)$_POST['max_downloads'] : null,
+                    'recipient_email' => $recipientEmail
+                ];
+
+                $result = $shareManager->createShare($_POST['file_id'], $currentUser['id'], $options);
+
+                if ($result['success']) {
+                    $successMessage = $visibility === 'private_recipient'
+                        ? 'Recipient-restricted one-time link created successfully!'
+                        : 'Share link created successfully!';
+
+                    $message = [
+                        'type' => 'success',
+                        'message' => $successMessage,
+                        'share_url' => $result['share_url']
+                    ];
+                } else {
+                    $message = ['type' => 'error', 'message' => $result['error']];
+                }
             }
         }
         
@@ -175,9 +201,26 @@ $csrfToken = $auth->generateCSRFToken();
                         </div>
                     </div>
                     
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="is_public" name="is_public" checked>
-                        <label for="is_public">Show in public files list (visible to anonymous users)</label>
+                    <div class="visibility-options" role="group" aria-label="Share visibility">
+                        <span class="visibility-label">Visibility</span>
+                        <label class="visibility-option">
+                            <input type="radio" name="visibility" value="private" checked>
+                            <span>Private link (only people with the link can open it)</span>
+                        </label>
+                        <label class="visibility-option">
+                            <input type="radio" name="visibility" value="public">
+                            <span>Public (also listed on the Public Files page)</span>
+                        </label>
+                        <label class="visibility-option">
+                            <input type="radio" name="visibility" value="private_recipient">
+                            <span>Recipient-restricted one-time link (email bound)</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group visibility-dependent" id="recipient-email-group" style="display: none;">
+                        <label for="recipient_email">Recipient Email</label>
+                        <input type="email" id="recipient_email" name="recipient_email" placeholder="recipient@example.com">
+                        <small class="text-muted">This creates a one-time link bound to this email address.</small>
                     </div>
                     
                     <button type="submit" class="btn">Create Share Link</button>
@@ -214,6 +257,13 @@ $csrfToken = $auth->generateCSRFToken();
                                         <?php endif; ?>
                                         <?php if ($share['is_public']): ?>
                                             <span class="badge badge-info" title="Public">🌐</span>
+                                        <?php elseif (!empty($share['recipient_email'])): ?>
+                                            <span class="badge badge-warning" title="Recipient restricted">📧 Recipient</span>
+                                        <?php else: ?>
+                                            <span class="badge" title="Private link">🔒 Private</span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($share['recipient_email'])): ?>
+                                            <small class="text-muted">to <?php echo htmlspecialchars($share['recipient_email']); ?></small>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -261,18 +311,26 @@ $csrfToken = $auth->generateCSRFToken();
                                     </div>
                                 </td>
                                 <td class="actions">
-                                    <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small" title="Copy link">
-                                        📋
-                                    </button>
-                                    <a href="shared.php?token=<?php echo htmlspecialchars($share['share_token']); ?>" class="btn btn-small" title="View" target="_blank">
-                                        👁️
-                                    </a>
-                                    <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this share link?')">
-                                        <input type="hidden" name="action" value="delete_share">
-                                        <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
-                                        <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                        <button type="submit" class="btn btn-small btn-danger" title="Delete">🗑️</button>
-                                    </form>
+                                    <div class="actions-inline">
+                                        <?php if (empty($share['recipient_email'])): ?>
+                                            <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small" title="Copy link">
+                                                📋
+                                            </button>
+                                            <a href="shared.php?token=<?php echo htmlspecialchars($share['share_token']); ?>" class="btn btn-small" title="View" target="_blank">
+                                                👁️
+                                            </a>
+                                        <?php else: ?>
+                                            <button type="button" class="btn btn-small" title="Recipient-restricted links are one-time and can only be copied when created." disabled>
+                                                📧
+                                            </button>
+                                        <?php endif; ?>
+                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this share link?')">
+                                            <input type="hidden" name="action" value="delete_share">
+                                            <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                            <button type="submit" class="btn btn-small btn-danger" title="Delete">🗑️</button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -375,6 +433,25 @@ $csrfToken = $auth->generateCSRFToken();
             btn.textContent = 'Copied!';
             setTimeout(() => btn.textContent = 'Copy', 2000);
         }
+
+        function updateVisibilityFields() {
+            const selected = document.querySelector('input[name="visibility"]:checked');
+            const recipientGroup = document.getElementById('recipient-email-group');
+            const recipientInput = document.getElementById('recipient_email');
+
+            if (!selected || !recipientGroup || !recipientInput) {
+                return;
+            }
+
+            const showRecipient = selected.value === 'private_recipient';
+            recipientGroup.style.display = showRecipient ? 'block' : 'none';
+            recipientInput.required = showRecipient;
+        }
+
+        document.querySelectorAll('input[name="visibility"]').forEach(function(el) {
+            el.addEventListener('change', updateVisibilityFields);
+        });
+        updateVisibilityFields();
     </script>
     
     <?php include 'footer.php'; ?>

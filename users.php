@@ -62,6 +62,25 @@ class UserManager {
     public function updateUser($userId, $data) {
         $updates = [];
         $params = [];
+
+        if (isset($data['username'])) {
+            $username = trim((string)$data['username']);
+            if ($username === '') {
+                return ['success' => false, 'error' => 'Username cannot be empty.'];
+            }
+
+            $existingUser = $this->db->fetch(
+                "SELECT id FROM users WHERE username = ? AND id != ? LIMIT 1",
+                [$username, $userId]
+            );
+
+            if ($existingUser) {
+                return ['success' => false, 'error' => 'Username already exists.'];
+            }
+
+            $updates[] = "username = ?";
+            $params[] = $username;
+        }
         
         if (isset($data['email'])) {
             $updates[] = "email = ?";
@@ -166,6 +185,16 @@ class UserManager {
     
     // Create access code
     public function createAccessCode($maxUses = 1, $uploadQuota = 1073741824, $expiryDate = null, $createdBy = null) {
+        $maxUses = intval($maxUses);
+        if ($maxUses < 1) {
+            return ['success' => false, 'error' => 'Max uses must be at least 1.'];
+        }
+
+        $uploadQuota = intval($uploadQuota);
+        if ($uploadQuota < 1) {
+            return ['success' => false, 'error' => 'Upload quota must be greater than 0.'];
+        }
+
         // Generate random access code
         $code = bin2hex(random_bytes(16));
         
@@ -189,6 +218,16 @@ class UserManager {
     
     // Delete access code
     public function deleteAccessCode($codeId) {
+        $codeId = intval($codeId);
+        if ($codeId < 1) {
+            return ['success' => false, 'error' => 'Invalid access code ID.'];
+        }
+
+        $codeExists = $this->db->fetch("SELECT id FROM access_codes WHERE id = ? LIMIT 1", [$codeId]);
+        if (!$codeExists) {
+            return ['success' => false, 'error' => 'Access code not found.'];
+        }
+
         // Get files uploaded with this code to delete
         $sql = "SELECT filename FROM files WHERE uploaded_by_code = ?";
         $files = $this->db->fetchAll($sql, [$codeId]);

@@ -6,6 +6,7 @@ require_once 'auth.php';
 require_once 'files.php';
 require_once 'users.php';
 require_once 'share.php';
+require_once 'smtp_mailer.php';
 require_once 'rbac.php';
 
 $db = new Database();
@@ -61,9 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $uploadMessage = ['type' => 'error', 'message' => 'Invalid request.'];
     } elseif (isset($_POST['file_id'])) {
         $currentUser = $auth->getCurrentUser();
-        $result = $shareManager->createShare($_POST['file_id'], $currentUser['id'], ['is_public' => true]);
+        $result = $shareManager->createShare($_POST['file_id'], $currentUser['id'], ['is_public' => false]);
         if ($result['success']) {
-            $uploadMessage = ['type' => 'success', 'message' => 'Share link created!', 'share_url' => $result['share_url']];
+            $uploadMessage = ['type' => 'success', 'message' => 'Private share link created!', 'share_url' => $result['share_url']];
         } else {
             $uploadMessage = ['type' => 'error', 'message' => $result['error']];
         }
@@ -82,6 +83,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $uploadMessage = ['type' => 'success', 'message' => 'File unshared successfully!'];
         } else {
             $uploadMessage = ['type' => 'error', 'message' => $result['error']];
+        }
+    }
+}
+
+// Handle email share creation and delivery
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'email_share') {
+    // Verify CSRF token
+    if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
+        $uploadMessage = ['type' => 'error', 'message' => 'Invalid request.'];
+    } elseif (isset($_POST['file_id'])) {
+        $currentUser = $auth->getCurrentUser();
+        $recipientEmail = trim($_POST['recipient_email'] ?? '');
+        $emailNote = trim($_POST['email_note'] ?? '');
+
+        if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            $uploadMessage = ['type' => 'error', 'message' => 'Please provide a valid recipient email address.'];
+        } else {
+            $file = $fileManager->getFile($_POST['file_id']);
+            if (!$file || !RBAC::canShareFile($file, $currentUser)) {
+                $uploadMessage = ['type' => 'error', 'message' => 'Permission denied or file not found.'];
+            } else {
+                $shareResult = $shareManager->createShare($_POST['file_id'], $currentUser['id'], [
+                    'is_public' => false,
+                    'recipient_email' => $recipientEmail
+                ]);
+
+                if (!$shareResult['success']) {
+                    $uploadMessage = ['type' => 'error', 'message' => $shareResult['error']];
+                } else {
+                    $smtpMailer = new SMTPMailer($db);
+                    if (!$smtpMailer->isConfigured()) {
+                        $shareManager->deleteShare($shareResult['share_id'], $currentUser['id']);
+                        $uploadMessage = ['type' => 'error', 'message' => 'SMTP is not configured. Please configure SMTP in Settings before sending email shares.'];
+                    } else {
+                        $shareUrl = $shareResult['recipient_share_url'] ?? $shareResult['share_url'];
+                        $subject = 'Secure file shared with you: ' . $file['original_filename'];
+
+                        $safeFilename = htmlspecialchars($file['original_filename']);
+                        $safeSender = htmlspecialchars($currentUser['username']);
+                        $safeLink = htmlspecialchars($shareUrl);
+
+                        $htmlBody = '<p><strong>' . $safeSender . '</strong> shared a secure file with you.</p>'
+                            . '<p><strong>File:</strong> ' . $safeFilename . '</p>'
+                            . '<p>This is a recipient-restricted one-time link. It can be used once and should not be forwarded.</p>'
+                            . '<p><a href="' . $safeLink . '">Open secure download link</a></p>';
+
+                        if ($emailNote !== '') {
+                            $htmlBody .= '<p><strong>Message:</strong><br>' . nl2br(htmlspecialchars($emailNote)) . '</p>';
+                        }
+
+                        $textBody = $currentUser['username'] . ' shared a secure file with you.' . "\n"
+                            . 'File: ' . $file['original_filename'] . "\n"
+                            . 'Recipient-restricted one-time link: ' . $shareUrl;
+                        if ($emailNote !== '') {
+                            $textBody .= "\n\nMessage:\n" . $emailNote;
+                        }
+
+                        $mailResult = $smtpMailer->send($recipientEmail, $subject, $htmlBody, $textBody);
+                        if (!$mailResult['success']) {
+                            // Roll back share if email send fails so stale links are not left behind.
+                            $shareManager->deleteShare($shareResult['share_id'], $currentUser['id']);
+                            $uploadMessage = ['type' => 'error', 'message' => 'Failed to send email share: ' . $mailResult['error']];
+                        } else {
+                            $uploadMessage = [
+                                'type' => 'success',
+                                'message' => 'Recipient-restricted share link emailed to ' . $recipientEmail . '.',
+                                'share_url' => $shareUrl
+                            ];
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -248,6 +321,12 @@ $csrfToken = $auth->generateCSRFToken();
                                                 <button type="submit" class="btn btn-small btn-share" title="Create share link">Share</button>
                                             </form>
                                         <?php endif; ?>
+                                        <button
+                                            type="button"
+                                            class="btn btn-small"
+                                            title="Email recipient-restricted link"
+                                            onclick="openEmailShareModal(<?php echo (int)$file['id']; ?>, '<?php echo htmlspecialchars($file['original_filename'], ENT_QUOTES); ?>')"
+                                        >Email</button>
                                     <?php endif; ?>
                                     <?php if ($currentUser && RBAC::canDeleteFile($file, $currentUser)): ?>
                                         <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">
@@ -263,6 +342,42 @@ $csrfToken = $auth->generateCSRFToken();
                     </tbody>
                 </table>
             <?php endif; ?>
+        </div>
+    </div>
+
+    <div id="emailShareModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📧 Email Secure Share Link</h3>
+                <button type="button" onclick="closeEmailShareModal()" class="btn-close">&times;</button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="email_share">
+                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                <input type="hidden" name="file_id" id="emailShareFileId" value="">
+
+                <div class="form-group">
+                    <label>File</label>
+                    <div id="emailShareFilename" class="hash-display"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="recipient_email">Recipient Email</label>
+                    <input type="email" id="recipient_email" name="recipient_email" required placeholder="recipient@example.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="email_note">Message (optional)</label>
+                    <textarea id="email_note" name="email_note" rows="3" placeholder="Add a short message..."></textarea>
+                </div>
+
+                <small class="text-muted">This sends a recipient-restricted one-time link that is not listed publicly.</small>
+
+                <div class="modal-actions">
+                    <button type="button" onclick="closeEmailShareModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn">Send Email</button>
+                </div>
+            </form>
         </div>
     </div>
     
@@ -301,6 +416,34 @@ $csrfToken = $auth->generateCSRFToken();
                 copyToClipboard(element.textContent);
             }
         }
+
+        function openEmailShareModal(fileId, filename) {
+            const modal = document.getElementById('emailShareModal');
+            const fileIdInput = document.getElementById('emailShareFileId');
+            const fileNameDisplay = document.getElementById('emailShareFilename');
+            const recipientInput = document.getElementById('recipient_email');
+            const noteInput = document.getElementById('email_note');
+
+            fileIdInput.value = fileId;
+            fileNameDisplay.textContent = filename;
+            recipientInput.value = '';
+            noteInput.value = '';
+
+            modal.style.display = 'flex';
+            recipientInput.focus();
+        }
+
+        function closeEmailShareModal() {
+            const modal = document.getElementById('emailShareModal');
+            modal.style.display = 'none';
+        }
+
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('emailShareModal');
+            if (event.target === modal) {
+                closeEmailShareModal();
+            }
+        });
     </script>
     
     <?php include 'footer.php'; ?>

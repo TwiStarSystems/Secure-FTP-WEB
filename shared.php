@@ -44,6 +44,8 @@ if ($tokenFailureLock['locked']) {
 
 // Get share token from URL
 $token = $_GET['token'] ?? null;
+$recipientEmail = $_GET['recipient'] ?? null;
+$recipientToken = $_GET['rt'] ?? null;
 
 if (!$token) {
     $securityMonitor->registerFailure(
@@ -121,6 +123,9 @@ $error = null;
 
 // Validate share
 $validation = $shareManager->validateShare($share, $password);
+
+// Validate recipient-restricted token if this share is locked to a recipient.
+$recipientValidation = $shareManager->validateRecipientAccess($share['id'], $recipientEmail, $recipientToken);
 
 // If password required and not provided, show password form
 if (!$validation['valid'] && isset($validation['requires_password'])) {
@@ -220,6 +225,35 @@ if (!$validation['valid']) {
     exit;
 }
 
+if (!$recipientValidation['valid']) {
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title><?php echo SITE_NAME; ?> - Share Error</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body class="login-page">
+        <div class="login-container white-bg">
+            <div class="logo">
+                <h1>🔒 <?php echo SITE_NAME; ?></h1>
+                <p>Recipient-Restricted Link</p>
+            </div>
+
+            <div class="alert alert-error"><?php echo htmlspecialchars($recipientValidation['error']); ?></div>
+
+            <div class="back-link">
+                <a href="index.php">Back to Home</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
 // If we get here, share is valid - check if download requested
 if (isset($_GET['download']) && $_GET['download'] === '1') {
     $downloadRequestRate = $securityMonitor->registerRequest(
@@ -255,6 +289,14 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
             'file_id' => intval($share['file_id'])
         ]);
         die('File not found on disk.');
+    }
+
+    // Recipient-restricted links are one-time and are consumed on successful download.
+    if (!empty($recipientValidation['restriction'])) {
+        $consumeResult = $shareManager->consumeRecipientToken($share['id']);
+        if (!$consumeResult['success']) {
+            die('This recipient link is no longer valid.');
+        }
     }
     
     // Record download for share and file
@@ -345,7 +387,7 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
             </div>
         </div>
         
-        <a href="?token=<?php echo htmlspecialchars($token); ?>&download=1" class="btn btn-download">
+        <a href="?token=<?php echo htmlspecialchars($token); ?>&download=1<?php if (!empty($recipientEmail)): ?>&recipient=<?php echo rawurlencode($recipientEmail); ?><?php endif; ?><?php if (!empty($recipientToken)): ?>&rt=<?php echo htmlspecialchars($recipientToken); ?><?php endif; ?>" class="btn btn-download">
             ⬇️ Download File
         </a>
         

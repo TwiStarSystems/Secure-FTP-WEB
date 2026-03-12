@@ -73,6 +73,22 @@ CREATE TABLE IF NOT EXISTS shared_files (
     INDEX idx_is_public (is_public, is_active)
 );
 
+-- Recipient-restricted one-time access tokens for private shares
+CREATE TABLE IF NOT EXISTS share_recipient_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    share_id INT NOT NULL UNIQUE,
+    recipient_email VARCHAR(191) NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    expires_at DATETIME NULL,
+    used_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (share_id) REFERENCES shared_files(id) ON DELETE CASCADE,
+    INDEX idx_recipient_email (recipient_email),
+    INDEX idx_expires_at (expires_at),
+    INDEX idx_used_at (used_at)
+);
+
 -- Login attempts table for rate limiting
 CREATE TABLE IF NOT EXISTS login_attempts (
     id INT AUTO_INCREMENT PRIMARY KEY,
