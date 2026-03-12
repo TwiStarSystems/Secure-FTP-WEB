@@ -43,6 +43,9 @@ define('SHARE_REQUEST_LOCKOUT_SECONDS', 900); // 15 minutes
 define('HASH_ALGORITHMS', ['sha256', 'sha512', 'sha1']);
 define('DEFAULT_HASH_ALGORITHM', 'sha256');
 
+// Publicly accessible routes (no authentication required)
+define('PUBLIC_ENTRYPOINTS', ['login.php', 'public.php', 'shared.php', 'logout.php']);
+
 // Timezone
 date_default_timezone_set('UTC');
 
@@ -61,6 +64,23 @@ ini_set('session.cookie_samesite', 'Strict'); // CSRF protection
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+// Central access guard for direct web requests.
+// Only explicitly public pages are reachable without authentication.
+if (PHP_SAPI !== 'cli' && isset($_SERVER['SCRIPT_NAME'])) {
+    $entryScript = basename((string)$_SERVER['SCRIPT_NAME']);
+    $isPhpEntrypoint = substr($entryScript, -4) === '.php';
+
+    if ($isPhpEntrypoint) {
+        $isPublicScript = in_array($entryScript, PUBLIC_ENTRYPOINTS, true);
+        $isAuthenticatedSession = isset($_SESSION['user_id']) || isset($_SESSION['access_code_id']);
+
+        if (!$isPublicScript && !$isAuthenticatedSession) {
+            header('Location: login.php');
+            exit;
+        }
+    }
 }
 
 /**

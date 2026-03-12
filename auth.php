@@ -7,6 +7,7 @@ require_once 'mfa.php';
 class Auth {
     private $db;
     private $mfaService;
+    private const MFA_PENDING_TIMEOUT_SECONDS = 900;
     
     public function __construct($db) {
         $this->db = $db;
@@ -30,6 +31,26 @@ class Auth {
         }
         return false;
     }
+
+    private function getClientIp() {
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            return trim($parts[0]);
+        }
+
+        if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+            return trim($_SERVER['HTTP_X_REAL_IP']);
+        }
+
+        return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    }
+
+    private function recordLoginAttemptForIdentifiers(array $identifiers, $success = false) {
+        $unique = array_values(array_unique(array_filter($identifiers)));
+        foreach ($unique as $identifier) {
+            $this->recordLoginAttempt($identifier, $success);
+        }
+    }
     
     // Record login attempt
     public function recordLoginAttempt($identifier, $success = false) {
@@ -45,10 +66,13 @@ class Auth {
     
     // User login
     public function login($username, $password) {
-        $identifier = $username . '_' . $_SERVER['REMOTE_ADDR'];
+        $normalizedUsername = strtolower(trim((string)$username));
+        $clientIp = $this->getClientIp();
+        $identifier = 'login_user:' . $normalizedUsername . ':' . $clientIp;
+        $ipIdentifier = 'login_ip:' . $clientIp;
         
         // Check rate limiting
-        if ($this->isRateLimited($identifier)) {
+        if ($this->isRateLimited($identifier) || $this->isRateLimited($ipIdentifier)) {
             return ['success' => false, 'error' => 'Too many failed attempts. Please try again later.'];
         }
         
@@ -61,7 +85,7 @@ class Auth {
         if ($user && password_verify($password, $user['password_hash'])) {
             // Check if temporary user has expired
             if ($user['is_temporary'] && $user['expiry_date'] && strtotime($user['expiry_date']) < time()) {
-                $this->recordLoginAttempt($identifier, false);
+                $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
                 return ['success' => false, 'error' => 'User account has expired.'];
             }
             
@@ -71,6 +95,7 @@ class Auth {
             if ($availableMethods['totp'] || $availableMethods['email']) {
                 $_SESSION['mfa_pending_user_id'] = $user['id'];
                 $_SESSION['mfa_pending_identifier'] = $identifier;
+                $_SESSION['mfa_pending_ip_identifier'] = $ipIdentifier;
                 $_SESSION['mfa_pending_started_at'] = time();
                 $_SESSION['mfa_available_methods'] = $availableMethods;
 
@@ -88,21 +113,23 @@ class Auth {
                 ];
             }
 
-            $this->completeUserLogin($user, $identifier);
+            $this->completeUserLogin($user, [$identifier, $ipIdentifier]);
             return ['success' => true, 'user' => $user];
         }
         
         // Record failed attempt
-        $this->recordLoginAttempt($identifier, false);
+        $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
         return ['success' => false, 'error' => 'Invalid username or password.'];
     }
     
     // Access code login
     public function loginWithAccessCode($code) {
-        $identifier = 'code_' . $_SERVER['REMOTE_ADDR'];
+        $clientIp = $this->getClientIp();
+        $identifier = 'login_code:' . $clientIp;
+        $ipIdentifier = 'login_ip:' . $clientIp;
         
         // Check rate limiting
-        if ($this->isRateLimited($identifier)) {
+        if ($this->isRateLimited($identifier) || $this->isRateLimited($ipIdentifier)) {
             return ['success' => false, 'error' => 'Too many failed attempts. Please try again later.'];
         }
         
@@ -115,13 +142,13 @@ class Auth {
         if ($accessCode) {
             // Check if code has expired
             if ($accessCode['expiry_date'] && strtotime($accessCode['expiry_date']) < time()) {
-                $this->recordLoginAttempt($identifier, false);
+                $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
                 return ['success' => false, 'error' => 'Access code has expired.'];
             }
             
             // Check if max uses reached
             if ($accessCode['current_uses'] >= $accessCode['max_uses']) {
-                $this->recordLoginAttempt($identifier, false);
+                $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
                 return ['success' => false, 'error' => 'Access code has reached maximum uses.'];
             }
             
@@ -130,7 +157,10 @@ class Auth {
             $this->db->query($sql, [$accessCode['id']]);
             
             // Record successful attempt
-            $this->recordLoginAttempt($identifier, true);
+            $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], true);
+
+            // Prevent session fixation on successful login.
+            session_regenerate_id(true);
             
             // Set session
             $_SESSION['access_code_id'] = $accessCode['id'];
@@ -141,7 +171,7 @@ class Auth {
         }
         
         // Record failed attempt
-        $this->recordLoginAttempt($identifier, false);
+        $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
         return ['success' => false, 'error' => 'Invalid access code.'];
     }
     
@@ -188,6 +218,16 @@ class Auth {
     }
 
     public function hasPendingMfa() {
+        if (!isset($_SESSION['mfa_pending_user_id'])) {
+            return false;
+        }
+
+        $startedAt = intval($_SESSION['mfa_pending_started_at'] ?? 0);
+        if ($startedAt <= 0 || (time() - $startedAt) > self::MFA_PENDING_TIMEOUT_SECONDS) {
+            $this->clearPendingMfa();
+            return false;
+        }
+
         return isset($_SESSION['mfa_pending_user_id']);
     }
 
@@ -232,15 +272,17 @@ class Auth {
         }
 
         $userId = intval($_SESSION['mfa_pending_user_id']);
-        $identifier = 'mfa_' . $userId . '_' . $_SERVER['REMOTE_ADDR'];
+        $clientIp = $this->getClientIp();
+        $identifier = 'mfa_user:' . $userId . ':' . $clientIp;
+        $ipIdentifier = 'login_ip:' . $clientIp;
 
-        if ($this->isRateLimited($identifier)) {
+        if ($this->isRateLimited($identifier) || $this->isRateLimited($ipIdentifier)) {
             return ['success' => false, 'error' => 'Too many failed MFA attempts. Please retry login.'];
         }
 
         $cleanCode = preg_replace('/\D/', '', (string)$code);
         if (strlen($cleanCode) !== 6) {
-            $this->recordLoginAttempt($identifier, false);
+            $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
             return ['success' => false, 'error' => 'MFA code must be 6 digits.'];
         }
 
@@ -252,11 +294,11 @@ class Auth {
         }
 
         if (!$verified) {
-            $this->recordLoginAttempt($identifier, false);
+            $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
             return ['success' => false, 'error' => 'Invalid or expired MFA code.'];
         }
 
-        $this->recordLoginAttempt($identifier, true);
+        $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], true);
 
         $user = $this->db->fetch("SELECT * FROM users WHERE id = ? AND is_active = TRUE LIMIT 1", [$userId]);
         if (!$user) {
@@ -264,9 +306,10 @@ class Auth {
             return ['success' => false, 'error' => 'Account no longer available.'];
         }
 
-        $primaryIdentifier = $_SESSION['mfa_pending_identifier'] ?? ($user['username'] . '_' . $_SERVER['REMOTE_ADDR']);
+        $primaryIdentifier = $_SESSION['mfa_pending_identifier'] ?? ('login_user:' . strtolower($user['username']) . ':' . $clientIp);
+        $primaryIpIdentifier = $_SESSION['mfa_pending_ip_identifier'] ?? $ipIdentifier;
         $this->clearPendingMfa();
-        $this->completeUserLogin($user, $primaryIdentifier);
+        $this->completeUserLogin($user, [$primaryIdentifier, $primaryIpIdentifier]);
 
         return ['success' => true];
     }
@@ -274,15 +317,19 @@ class Auth {
     private function clearPendingMfa() {
         unset($_SESSION['mfa_pending_user_id']);
         unset($_SESSION['mfa_pending_identifier']);
+        unset($_SESSION['mfa_pending_ip_identifier']);
         unset($_SESSION['mfa_pending_started_at']);
         unset($_SESSION['mfa_available_methods']);
     }
 
-    private function completeUserLogin($user, $identifier) {
+    private function completeUserLogin($user, $identifiers) {
         $sql = "UPDATE users SET last_login = NOW() WHERE id = ?";
         $this->db->query($sql, [$user['id']]);
 
-        $this->recordLoginAttempt($identifier, true);
+        $this->recordLoginAttemptForIdentifiers((array)$identifiers, true);
+
+        // Prevent session fixation on successful user login.
+        session_regenerate_id(true);
 
         $role = isset($user['role']) && !empty($user['role']) ? $user['role'] : ($user['is_admin'] ? 'admin' : 'user');
 
