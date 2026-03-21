@@ -583,6 +583,38 @@ if (
     }
 }
 
+// Handle username change (for authenticated user accounts)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'change_username') {
+    if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
+        $message = ['type' => 'error', 'message' => 'Invalid request.'];
+    } elseif (!$currentUser) {
+        $message = ['type' => 'error', 'message' => 'Username changes are only available for registered users.'];
+    } else {
+        $newUsername = strtolower(trim((string)($_POST['new_username'] ?? '')));
+        $currentPassword = (string)($_POST['username_current_password'] ?? '');
+
+        if ($newUsername === '' || $currentPassword === '') {
+            $message = ['type' => 'error', 'message' => 'All fields are required.'];
+        } elseif (!preg_match('/^[a-z0-9._-]{3,50}$/', $newUsername)) {
+            $message = ['type' => 'error', 'message' => 'Username must be lowercase only (a-z, 0-9, dot, underscore, hyphen) and 3-50 characters.'];
+        } elseif (!password_verify($currentPassword, $currentUser['password_hash'])) {
+            $message = ['type' => 'error', 'message' => 'Current password is incorrect.'];
+        } elseif ($newUsername === $currentUser['username']) {
+            $message = ['type' => 'error', 'message' => 'New username must be different from your current username.'];
+        } else {
+            $result = $userManager->updateUser($currentUser['id'], ['username' => $newUsername]);
+
+            if (!$result['success']) {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            } else {
+                $_SESSION['username'] = $newUsername;
+                $currentUser = $auth->getCurrentUser();
+                $message = ['type' => 'success', 'message' => 'Username updated successfully!'];
+            }
+        }
+    }
+}
+
 // Handle password change (for all authenticated users)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'change_password') {
     if (!$auth->verifyCSRFToken($_POST['csrf_token'])) {
@@ -804,6 +836,29 @@ $csrfToken = $auth->generateCSRFToken();
                 </div>
                 
                 <?php if ($currentUser): ?>
+                    <hr style="border-color: var(--color-border); margin: 2rem 0;">
+
+                    <div class="settings-section">
+                        <h3>Change Username</h3>
+                        <form method="POST" class="form-group">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                            <input type="hidden" name="action" value="change_username">
+
+                            <div class="form-group">
+                                <label for="new_username">New Username:</label>
+                                <input type="text" id="new_username" name="new_username" required minlength="3" maxlength="50" pattern="[a-z0-9._-]{3,50}" value="<?php echo htmlspecialchars($currentUser['username']); ?>">
+                                <small style="color: var(--color-muted);">Lowercase only: a-z, 0-9, dot, underscore, hyphen (3-50 chars)</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="username_current_password">Current Password:</label>
+                                <input type="password" id="username_current_password" name="username_current_password" required>
+                            </div>
+
+                            <button type="submit" class="btn">Change Username</button>
+                        </form>
+                    </div>
+
                     <hr style="border-color: var(--color-border); margin: 2rem 0;">
                     
                     <div class="settings-section">

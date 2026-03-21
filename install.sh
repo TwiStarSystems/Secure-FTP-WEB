@@ -105,6 +105,17 @@ prompt_input() {
     fi
 }
 
+# Normalize and validate usernames using the same policy as the app.
+normalize_username() {
+    local username="$1"
+    echo "$username" | tr '[:upper:]' '[:lower:]' | xargs
+}
+
+is_valid_username() {
+    local username="$1"
+    [[ "$username" =~ ^[a-z0-9._-]{3,50}$ ]]
+}
+
 # Extract a PHP define value from config.php
 extract_php_define() {
     local file_path="$1"
@@ -892,13 +903,28 @@ fi
 
 # Create admin user
 print_header "STEP 15: Admin User Creation"
-print_message "Creating default admin user account..."
-print_warning "Using default credentials - admin/admin"
+print_message "Creating admin user account..."
+print_warning "Default credentials are admin/admin"
 print_warning "Please change the password after first login!"
 echo ""
 
-# Set default credentials
-ADMIN_USER="admin"
+# Set default credentials (with validation loop for username policy)
+while true; do
+    ADMIN_USER_INPUT=$(prompt_input "Admin username (lowercase only: a-z, 0-9, dot, underscore, hyphen; 3-50 chars)" "admin")
+    ADMIN_USER=$(normalize_username "$ADMIN_USER_INPUT")
+
+    if [ "$ADMIN_USER" != "$ADMIN_USER_INPUT" ]; then
+        print_warning "Username was normalized to lowercase: ${ADMIN_USER}"
+    fi
+
+    if ! is_valid_username "$ADMIN_USER"; then
+        print_error "Invalid username. Use lowercase only: a-z, 0-9, dot, underscore, hyphen (3-50 chars)."
+        continue
+    fi
+
+    break
+done
+
 ADMIN_PASS="admin"
 
 # Hash password using PHP

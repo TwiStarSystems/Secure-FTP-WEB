@@ -22,9 +22,15 @@ class UserManager {
     
     // Create new user
     public function createUser($username, $password, $email, $role = 'user', $uploadQuota = 1073741824, $isTemporary = false, $expiryDate = null) {
+        $username = strtolower(trim((string)$username));
+
         // Validate input
         if (empty($username) || empty($password)) {
             return ['success' => false, 'error' => 'Username and password are required.'];
+        }
+
+        if (!preg_match('/^[a-z0-9._-]{3,50}$/', $username)) {
+            return ['success' => false, 'error' => 'Username must be lowercase only (a-z, 0-9, dot, underscore, hyphen) and 3-50 characters.'];
         }
         
         // Validate role
@@ -74,9 +80,13 @@ class UserManager {
         $params = [];
 
         if (isset($data['username'])) {
-            $username = trim((string)$data['username']);
+            $username = strtolower(trim((string)$data['username']));
             if ($username === '') {
                 return ['success' => false, 'error' => 'Username cannot be empty.'];
+            }
+
+            if (!preg_match('/^[a-z0-9._-]{3,50}$/', $username)) {
+                return ['success' => false, 'error' => 'Username must be lowercase only (a-z, 0-9, dot, underscore, hyphen) and 3-50 characters.'];
             }
 
             $existingUser = $this->db->fetch(
