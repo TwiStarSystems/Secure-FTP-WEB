@@ -44,7 +44,7 @@ define('HASH_ALGORITHMS', ['sha256', 'sha512', 'sha1']);
 define('DEFAULT_HASH_ALGORITHM', 'sha256');
 
 // Publicly accessible routes (no authentication required)
-define('PUBLIC_ENTRYPOINTS', ['login.php', 'public.php', 'shared.php', 'logout.php']);
+define('PUBLIC_ENTRYPOINTS', ['login.php', 'public.php', 'shared.php', 'logout.php', 'forgot_password.php', 'reset_password.php']);
 
 // Timezone
 date_default_timezone_set('UTC');

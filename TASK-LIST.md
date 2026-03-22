@@ -1,0 +1,206 @@
+# Task List For Secure FTP Web
+
+> **Audited:** 2026-03-21 19:01 UTC \ 37 commits since inception (first audit)
+> **Method:** Full codebase review of all service classes, page controllers, views, authentication/RBAC logic, database schema, and install scripts.
+> **Codebase:** ~9,200 lines | 9 controllers | 10 services | 3 views | 0 migrations | 0 Go agent files
+> **Target Launch:** April 1, 2026 (flexible — QUALITY is the priority, not speed)
+
+---
+
+# Overall Complete Percentage: 80%
+
+## Summary
+
+| Area | Completed | Remaining | Completion |
+|------|-----------|-----------|------------|
+| Authentication & Access | 10 | 0 | 100% |
+| File Management | 11 | 7 | 61% |
+| Sharing | 11 | 2 | 85% |
+| Admin & Settings | 12 | 1 | 92% |
+| Security Monitoring | 6 | 2 | 75% |
+| Operations & Deployment | 4 | 3 | 57% |
+| UI/UX Polish | 9 | 3 | 75% |
+| Bugs | 3 | 0 | 100% |
+
+---
+
+# Authentication & Access #
+
+## Core Login
+- [X] Username/password login with bcrypt verification
+- [X] Access code login (7-character alphanumeric codes)
+- [X] Role-Based Access Control — admin / user / anonymous roles
+- [X] Session timeout enforcement (1 hour)
+- [X] Session fixation prevention (`session_regenerate_id` on each successful login)
+- [X] Rate limiting for login attempts (per-user+IP composite key)
+- [X] CSRF protection on all forms (`hash_equals` token verification with rotation)
+
+## Multi-Factor Authentication
+- [X] TOTP MFA — encrypts secret at rest with AES-256-GCM
+- [X] Email MFA — 6-digit OTP with 10-minute expiry
+- [X] Per-user MFA enable/disable from Settings
+- [X] MFA pending session timeout (15 minutes)
+- [X] Admin ability to clear MFA (TOTP + email) for any user
+- [X] Resend email MFA code from login page
+- [X] QR code generation for TOTP setup — `qrcode@1.5.3` loaded from jsDelivr CDN; QR is rendered client-side in a `<canvas>` element, the provisioning URI never leaves the browser. Secret key shown below the QR as a fallback.
+
+## Self-Service Account
+- [X] Password reset / forgot password — token-based email flow implemented: `forgot_password.php` accepts an email, generates a 64-hex token (SHA-256 stored), sends a 1-hour reset link via SMTP. `reset_password.php` validates the token, sets the new password via `UserManager`, and marks the token used. Rate-limited per IP. Tokens are auto-purged on expiry. If SMTP is not configured a clear “Contact admin” message is shown. Added `password_reset_tokens` table and updated `PUBLIC_ENTRYPOINTS`.
+
+---
+
+# File Management #
+
+## Upload & Storage
+- [X] File upload with hash verification (SHA-1 / SHA-256 / SHA-512 selectable)
+- [X] Per-user upload quota enforcement
+- [X] Per-access-code upload quota and file count limit enforcement
+- [X] Secure filename randomization (32 hex chars + timestamp, sanitized extension)
+- [X] Path traversal prevention on all file read/write operations
+- [X] Server-side file type validation — configurable admin allowlist (MIME types textarea in Site Settings). Validated against `mime_content_type()` magic-byte detection; blocked files are deleted before any DB insert. Empty allowlist = allow all.
+- [X] Large file upload support — XHR-based upload with live progress bar (`XMLHttpRequest upload.progress` event). PHP already streams uploads to a temp file (no memory buffering). Server-side `fread()` 64 KB loop now used for all downloads (see Download section). PHP's `upload_max_filesize` / `post_max_size` / Nginx `client_max_body_size` (already set to 10 G in `install.sh`) control the actual ceiling.
+- [X] Upload progress feedback — XHR IIFE in `index.php` intercepts the upload form submit, sends via `XMLHttpRequest`, shows a live animated progress bar (percentage + byte counters). CSRF token is refreshed in-place from the JSON response so multiple back-to-back uploads work without reloading. Falls back gracefully to a normal form submit when JS is disabled.
+- [X] Virus scanning integration — optional ClamAV integration in `FileManager::uploadFile()`. Tries `clamdscan` (daemon) before `clamscan` (standalone) using hardcoded `is_executable()` checks. Enabled/disabled via an admin toggle in Site Settings → Upload Security. If ClamAV is not installed, uploads proceed silently. Infected files are deleted before any DB insert.
+- [X] Duplicate file detection — hash-based lookup in `FileManager::findDuplicate()` scoped to the same uploader (user or access code). If an identical file already exists the temp upload is deleted and the response includes `existing_file_id` so the UI can show a "Download existing file" link (both non-JS and XHR paths handled).
+- [ ] File integrity verification — no periodic integrity checks on stored files. Implement a background process that re-hashes stored files and compares against the original hash to detect silent corruption.
+- [ ] Storage backend abstraction — currently all files are stored on local disk. Abstract the storage layer to allow for future support of S3-compatible object storage or other backends.
+- [ ] User storage usage dashboard — no visibility into how much storage each user is consuming. Add a dashboard in the admin panel showing storage usage per user and access code, with sorting and filtering.
+- [ ] File upload API endpoint — no API for programmatic uploads. Implement a secure, authenticated API endpoint that accepts file uploads with the same validation and quota enforcement as the web interface.
+- [ ] File metadata editing — once uploaded, file metadata (name, description, tags) cannot be edited. Add an interface for users to update this information, which can improve organization and searchability.
+- [ ] File versioning — no support for multiple versions of the same file. Implement a versioning system that allows users to upload new versions while retaining access to previous ones, with clear version history and rollback options.
+- [ ] File tagging and categorization — no way to organize files beyond the filename. Add support for user-defined tags and categories to improve organization and searchability in the dashboard.
+- [ ] bulk file actions — no way to perform actions on multiple files at once. Implement checkboxes in the file list with bulk actions like delete, share, or move to folder.
+
+## Download
+- [X] Authenticated file download via `download.php` with rate-limit / failure lockout
+- [X] Chunked / streamed download for large files — `readfile()` replaced with a `fread()` 64 KB loop + `flush()` in both `download.php` and `shared.php`. Output buffering is cleared before streaming starts so PHP never loads the full file into memory.
+- [ ] File download API endpoint — no API for programmatic downloads. Implement a secure, authenticated API endpoint that serves file downloads with the same access controls and rate limiting as the web interface.
+- [ ] Download analytics — only total download count is tracked. Add more detailed analytics such as timestamps of each download, IP geolocation, and user-agent strings to provide insights into file access patterns.
+- [ ] Download resume support — interrupted downloads must restart from the beginning. Implement HTTP Range header support to allow clients to resume partial downloads, which is especially important for large files.
+- [ ] Secure streaming for media files — currently all files are served as direct downloads. For media files (images, videos, audio) implement secure streaming with tokenized URLs that expire after a short time to prevent unauthorized sharing of direct links.
+- [ ] Bulk download support — no way to download multiple files at once. Implement a feature that allows users to select multiple files and download them as a single ZIP archive, generated on-the-fly.
+
+## File Lifecycle
+- [X] File deletion (own files / admin all) with disk cleanup and quota release
+- [X] `file_expiry_date` UI — visible and editable in My Shares
+- [ ] File expiry enforcement (cron/scheduled task) — the `file_expiry_date` column exists in the DB and is settable in the UI, but **no background process deletes expired files**. Files past their expiry date remain on disk indefinitely. Implement a cron-triggered PHP or shell script that deletes files and their DB rows when `file_expiry_date < NOW()`.
+- [ ] File search / filter in the dashboard — admin user sees all files in a flat table with no search, filter, or pagination. As file counts grow this becomes unusable. Add at minimum a filename search input and pagination.
+- [ ] Bulk file operations — no way to delete or share multiple files at once. Add checkboxes + a "Delete selected" / "Share selected" action bar.
+- [ ] File rename / metadata edit — filename is locked at upload time with no way to change the display name.
+- [ ] File organization — no folders or collections. Add a way to group files into folders or collections for better organization, especially for users with many files.
+- [ ] File sharing from the dashboard — currently files can only be shared from the My Shares page. Add a "Share" button directly in the file list for quicker access to sharing options.
+- [ ] File download confirmation — currently all files trigger a direct download confirmation. For certain file types (e.g. images, text files) it would be better UX to show an inline preview instead of a download prompt. Implement a preview mode for common file types.
+
+---
+
+# Sharing #
+
+## Share Link Types
+- [X] Public share links (listed on the Public Files page)
+- [X] Private share links (URL only, not listed publicly)
+- [X] Recipient-restricted one-time links (email-bound, consumed on first download)
+- 
+
+## Share Options
+- [X] Optional password protection (bcrypt stored)
+- [X] Expiry date per share link
+- [X] Max download limit per share link
+- [X] Share active/deactivate toggle (soft-delete `is_active`)
+
+## My Shares Management
+- [X] Create share from My Shares page (public / private / recipient-restricted)
+- [X] Delete share link
+- [X] Edit share expiry date (modal)
+- [X] Edit file expiry date (modal)
+- [X] Regenerate recipient-restricted one-time URL
+- [X] Share status badges (Active / Expired / Limit Reached / Deactivated)
+
+## Email Sharing
+- [X] Email up to 10 recipients per action from the dashboard (each gets a unique one-time link)
+- [X] Rollback orphaned share records if email send fails
+- [X] Email audit events logged to security events table
+
+## Public Discovery
+- [X] Public Files page — card grid for anonymous visitors
+- [ ] File preview for common types — currently all files trigger a direct download confirmation. Adding a viewer for images (inline `<img>`), text files (`<pre>`), and PDF (`<embed>`) would improve the public-facing experience.
+- [ ] Share analytics beyond download count — timestamps of each download, geography (IP), etc. Low priority but useful for users who share frequently.
+
+---
+
+# Admin & Settings #
+
+## User Management
+- [X] Create users (username, password, email, role, quota, temporary flag + expiry)
+- [X] Edit user (username, email, password reset, quota, role toggle, clear MFA) via modal
+- [X] Delete user (cascades files on disk and in DB)
+- [X] Temporary users auto-cleaned up on login
+- [X] Username change by user (requires current password confirmation)
+- [X] Change password by user (from Settings)
+
+## Access Code Management
+- [X] Create access codes (custom or random, max uses, file count limit, quota, expiry)
+- [X] Delete access code (cascades files on disk and in DB)
+- [X] Email access code to recipient via SMTP modal
+- [X] Access codes deactivated on expiry during cleanup
+
+## Site Configuration
+- [X] Custom base URL setting (overrides auto-detection)
+- [X] Reverse proxy auto-detection (X-Forwarded-Proto, X-Forwarded-Host)
+- [X] SMTP configuration (host, port, TLS/SSL/none, auth, from address)
+- [X] SMTP password stored encrypted at rest (AES-256-GCM)
+- [X] Send test SMTP email from admin settings
+- [X] Tabbed settings UI (User Settings / User Management / Site Settings / Security Events)
+- [ ] Admin statistics dashboard — no summary view of total users, active files, storage consumed, active shares, or recent activity. Add a "Dashboard" card or tab in Settings with key metrics.
+
+## Security Events
+- [X] Security audit event log (info / warning / critical severity levels)
+- [X] Filter by severity, event type, date range, free-text search
+- [X] CSV export of filtered events
+- [X] Security threshold configuration (download/share rate limits and lockouts, live editable from UI)
+
+---
+
+# Security Monitoring #
+
+## Rate Limiting & Lockouts
+- [X] Login brute-force protection (per user+IP composite key)
+- [X] MFA brute-force protection (separate counter from login)
+- [X] Authenticated file download rate limiting + failure lockout
+- [X] Public share request rate limiting
+- [X] Share token brute-force lockout
+- [X] Share password brute-force lockout
+- [X] All thresholds configurable from admin UI (no code edit required)
+
+## Audit & Alerting
+- [X] Security audit event table with full context JSON
+- [X] Auto-cleanup of old audit events (90-day rolling window)
+- [ ] IP allowlist / blocklist — no way to permanently block a known-bad IP beyond the temporary lockout. Add an admin-managed IP block list checked at request entry.
+- [ ] Email alerts for critical security events — high-severity events (repeated lockouts, critical-rated events) should optionally trigger an alert email to the admin. Low implementation cost given SMTP is already wired.
+
+---
+
+# Operations & Deployment #
+
+## Installation
+- [X] `install.sh` — fresh, update, and uninstall modes (Debian/Ubuntu)
+- [X] Auto-generates secure random DB password during fresh install
+- [X] Nginx configuration with large upload support (`client_max_body_size 10G`)
+- [X] Reverse proxy example config (`nginx-reverse-proxy.conf.example`)
+- [X] `database.sql` schema with all tables and default admin seed
+- [ ] Cron job installation for file/share expiry cleanup — `install.sh` does not register any cron jobs. Add a cron entry (or systemd timer) during installation that runs a cleanup script (delete files past `file_expiry_date`, optionally deactivate expired shares, prune old `abuse_counters` / MFA codes). The DB cleanup functions already exist in `db.php` — they just need to be called on a schedule.
+- [ ] Backup / restore utilities — no mechanism to snapshot the uploads directory and database. Even a simple `backup.sh` wrapping `mysqldump` + `tar` would be valuable.
+
+---
+
+# UI/UX Polish #
+
+## Consistency & Corrections
+- [X] **~~BUG: Password change broken in `settings.php`~~** — Fixed: handler now uses `$currentUser['password_hash']` for verification and delegates the update to `$userManager->updateUser()` (which correctly hashes with `PASSWORD_DEFAULT` and updates the `password_hash` column). The old broken `$db->prepare()` / raw SQL pattern has been removed.
+- [X] **~~BUG: Hash column header mismatch in dashboard files table~~** — Fixed: column header now reads generic "Hash" and each row cell prefixes the actual algorithm (e.g. `SHA512: abc123...`) so files uploaded with any hash algorithm display correctly.
+- [X] **~~BUG: Unresolved TODO in `header.php`~~** — Verified logout flow is correct (`logout.php` → `$auth->logout()` → `session_unset()` + `session_destroy()` → redirect to `login.php`). TODO comment removed.
+- [X] Replace deprecated clipboard API in `index.php` — `copyToClipboard()` now uses `navigator.clipboard.writeText()` with an in-button visual confirmation ("Copied!" label for 1.5 s). Falls back to the `execCommand` textarea trick only in non-secure contexts (HTTP) where the Clipboard API is unavailable.
+- [X] TOTP QR code in Settings — QR code rendered in `<canvas>` using `qrcode.js` (CDN, client-side only). Secret key displayed below as a manual-entry fallback.
+
+## Usability
+- [ ] Pagination or virtual scroll for the file and share tables — no row limit is applied to the rendered tables. Admins with thousands of files will get an unusably slow page.
+- [ ] Settings link visible to non-admin users in the main nav — non-admins can only reach Settings via the small gear icon inside the user-info block. Adding a "Settings" nav button for all authenticated users would make account settings (password, username, MFA) more discoverable.

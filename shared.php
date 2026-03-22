@@ -324,8 +324,18 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
     header('Cache-Control: no-cache, must-revalidate');
     header('Pragma: public');
     
-    // Output file
-    readfile($filepath);
+    // Stream file to client in chunks to avoid loading the entire file into PHP memory
+    if (ob_get_level()) {
+        ob_end_clean();
+    }
+    $_fh = fopen($filepath, 'rb');
+    if ($_fh !== false) {
+        while (!feof($_fh)) {
+            echo fread($_fh, 65536);
+            flush();
+        }
+        fclose($_fh);
+    }
     exit;
 }
 

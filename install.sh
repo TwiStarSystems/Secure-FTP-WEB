@@ -225,6 +225,17 @@ CREATE TABLE IF NOT EXISTS security_audit_events (
     INDEX idx_created_at (created_at),
     INDEX idx_ip_address (ip_address)
 );
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_reset_token_hash (token_hash),
+    INDEX idx_reset_expires_at (expires_at)
+);
 SQL
 
     print_message "Database migrations completed."

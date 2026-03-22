@@ -82,6 +82,9 @@
                 
                 <button type="submit" class="btn">Login</button>
             </form>
+            <div style="text-align: center; margin-top: 0.75rem;">
+                <a href="forgot_password.php" style="color: var(--color-muted); font-size: 0.85rem;">Forgot password?</a>
+            </div>
         </div>
         
         <div id="code-tab" class="tab-content">

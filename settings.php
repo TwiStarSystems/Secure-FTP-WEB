@@ -112,6 +112,7 @@ if (
         'update_base_url',
         'update_smtp_settings',
         'update_security_thresholds',
+        'update_upload_security',
         'send_test_smtp_email',
         'export_security_events',
         'create_user',
@@ -296,6 +297,26 @@ if (
                 $message = ['type' => 'success', 'message' => 'Security threshold settings updated successfully!'];
             } elseif (!$message) {
                 $message = ['type' => 'error', 'message' => 'Failed to save security threshold settings.'];
+            }
+        } elseif ($_POST['action'] === 'update_upload_security') {
+            $appSettings = new AppSettingsManager($db);
+            $virusScanEnabledNew = isset($_POST['virus_scan_enabled']) ? '1' : '0';
+            $allowedMimeTypesNew  = trim($_POST['allowed_mime_types'] ?? '');
+
+            $saved1 = $appSettings->set(
+                'virus_scan_enabled', $virusScanEnabledNew, 'boolean',
+                'Enable ClamAV virus scanning on uploaded files', $_SESSION['user_id']
+            );
+            $saved2 = $appSettings->set(
+                'allowed_mime_types', $allowedMimeTypesNew, 'string',
+                'Newline or comma-separated list of permitted MIME types. Empty = allow all.',
+                $_SESSION['user_id']
+            );
+
+            if ($saved1 && $saved2) {
+                $message = ['type' => 'success', 'message' => 'Upload security settings saved successfully!'];
+            } else {
+                $message = ['type' => 'error', 'message' => 'Failed to save upload security settings.'];
             }
         } elseif ($_POST['action'] === 'send_test_smtp_email') {
             $testRecipientEmail = trim($_POST['test_recipient_email'] ?? '');
@@ -632,11 +653,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message = ['type' => 'error', 'message' => 'Password must be at least 8 characters long.'];
         } else {
             // Verify current password
-            if (password_verify($currentPassword, $currentUser['password'])) {
-                $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
-                $stmt = $db->prepare("UPDATE users SET password = ? WHERE id = ?");
-                $stmt->execute([$hashedPassword, $currentUser['id']]);
-                $message = ['type' => 'success', 'message' => 'Password changed successfully!'];
+            if (password_verify($currentPassword, $currentUser['password_hash'])) {
+                $result = $userManager->updateUser($currentUser['id'], ['password' => $newPassword]);
+                if ($result['success']) {
+                    $message = ['type' => 'success', 'message' => 'Password changed successfully!'];
+                } else {
+                    $message = ['type' => 'error', 'message' => $result['error']];
+                }
             } else {
                 $message = ['type' => 'error', 'message' => 'Current password is incorrect.'];
             }
@@ -733,6 +756,8 @@ $securityEventFilters = [
     'date_to' => '',
     'search' => ''
 ];
+$allowedMimeTypesSetting = '';
+$virusScanEnabled = false;
 
 if ($currentUser) {
     $mfaSettings = $mfaService->getUserMfaSettings($currentUser['id']);
@@ -760,7 +785,9 @@ if ($isAdmin) {
     $appSettings = new AppSettingsManager($db);
     $smtpSettings = $appSettings->getSmtpSettings();
     $hasSmtpPassword = !empty($smtpSettings['password']);
-    $securityThresholdSettings = $appSettings->getSecurityThresholds();
+    $securityThresholdSettings   = $appSettings->getSecurityThresholds();
+    $allowedMimeTypesSetting       = $appSettings->get('allowed_mime_types', '');
+    $virusScanEnabled              = $appSettings->isVirusScanEnabled();
 
     $securityEventFilters = normalizeSecurityEventFilters($_GET);
     $securityEventTypes = $securityMonitor->getDistinctEventTypes(500);
@@ -786,6 +813,7 @@ $csrfToken = $auth->generateCSRFToken();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Settings</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body class="simple-page">
     <?php include 'header.php'; ?>
@@ -947,13 +975,36 @@ $csrfToken = $auth->generateCSRFToken();
 
                         <?php if (!empty($mfaMethods['totp']) && !empty($mfaSettings) && !empty($mfaSettings['totp_secret'])): ?>
                             <div class="hash-info">
-                                <strong>TOTP Setup Secret:</strong><br>
-                                <span class="hash-display"><?php echo htmlspecialchars($mfaSettings['totp_secret']); ?></span>
-                                <small style="display: block; margin-top: 0.5rem; color: var(--color-muted);">
-                                    Add this secret manually in your authenticator app, or use this provisioning URI:
-                                </small>
-                                <span class="hash-display" style="display: block; margin-top: 0.5rem;"><?php echo htmlspecialchars($totpProvisioningUri); ?></span>
+                                <strong>TOTP Setup</strong>
+                                <div style="display: flex; gap: 1.5rem; align-items: flex-start; flex-wrap: wrap; margin-top: 0.75rem;">
+                                    <div style="text-align: center;">
+                                        <canvas id="totp-qr-canvas" style="display: block; border-radius: 4px;"></canvas>
+                                        <small style="color: var(--color-muted);">Scan with your authenticator app</small>
+                                    </div>
+                                    <div style="flex: 1; min-width: 180px;">
+                                        <strong>Secret Key:</strong><br>
+                                        <span class="hash-display" style="margin-top: 0.4rem; display: block;"><?php echo htmlspecialchars($mfaSettings['totp_secret']); ?></span>
+                                        <small style="display: block; margin-top: 0.5rem; color: var(--color-muted);">Enter this key manually if you cannot scan the QR code.</small>
+                                    </div>
+                                </div>
                             </div>
+                            <script>
+                            (function () {
+                                var canvas = document.getElementById('totp-qr-canvas');
+                                if (!canvas || typeof QRCode === 'undefined') { return; }
+                                QRCode.toCanvas(
+                                    canvas,
+                                    <?php echo json_encode($totpProvisioningUri, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES); ?>,
+                                    { width: 180, margin: 2, color: { dark: '#000000', light: '#ffffff' } },
+                                    function (err) {
+                                        if (err) {
+                                            canvas.style.display = 'none';
+                                            canvas.nextElementSibling.textContent = 'QR code unavailable — use the secret key above.';
+                                        }
+                                    }
+                                );
+                            }());
+                            </script>
                         <?php endif; ?>
 
                         <small style="display: block; margin-top: 0.75rem; color: var(--color-muted);">
@@ -1096,6 +1147,40 @@ $csrfToken = $auth->generateCSRFToken();
 
                     <div class="btn-row">
                         <button type="submit" class="btn btn-secondary">Send Test Email</button>
+                    </div>
+                </form>
+
+                <hr style="border-color: var(--color-border); margin: 2rem 0;">
+
+                <h3>Upload Security</h3>
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_upload_security">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+
+                    <div class="form-group">
+                        <label for="allowed_mime_types">Allowed MIME Types</label>
+                        <textarea id="allowed_mime_types" name="allowed_mime_types" rows="6"
+                            placeholder="image/jpeg&#10;image/png&#10;image/gif&#10;image/webp&#10;application/pdf&#10;text/plain&#10;application/zip"
+                        ><?php echo htmlspecialchars($allowedMimeTypesSetting); ?></textarea>
+                        <small style="display:block; margin-top:0.25rem; color:var(--color-muted)">
+                            One MIME type per line (or comma-separated). Leave empty to allow all file types.
+                            Validation uses the file's real MIME type (magic bytes), not just the extension.
+                        </small>
+                    </div>
+
+                    <div class="form-group" style="display:flex; align-items:center; gap:0.6rem;">
+                        <input type="checkbox" id="virus_scan_enabled" name="virus_scan_enabled" value="1"
+                            <?php echo $virusScanEnabled ? 'checked' : ''; ?>>
+                        <label for="virus_scan_enabled" style="margin:0">Enable ClamAV virus scanning on upload</label>
+                    </div>
+                    <small style="display:block; margin-bottom:1rem; color:var(--color-muted)">
+                        Scans uploaded files with <code>clamdscan</code> (daemon) or <code>clamscan</code> (standalone).
+                        ClamAV must be installed on the server. Files that fail the scan are deleted automatically.
+                        If ClamAV is not found, uploads proceed normally without scanning.
+                    </small>
+
+                    <div class="btn-row">
+                        <button type="submit" class="btn btn-primary">Save Upload Security Settings</button>
                     </div>
                 </form>
 

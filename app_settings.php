@@ -185,5 +185,29 @@ class AppSettingsManager {
 
         return $plainText === false ? '' : $plainText;
     }
+
+    /**
+     * Returns an array of allowed MIME types from settings.
+     * An empty array means all types are permitted (no restriction).
+     */
+    public function getAllowedMimeTypes() {
+        $stored = $this->get('allowed_mime_types', '');
+        if (trim($stored) === '') {
+            return [];
+        }
+        $entries = preg_split('/[\r\n,]+/', $stored);
+        $types = [];
+        foreach ($entries as $entry) {
+            $type = trim(strtolower($entry));
+            if ($type !== '') {
+                $types[] = $type;
+            }
+        }
+        return array_values(array_unique($types));
+    }
+
+    public function isVirusScanEnabled() {
+        return $this->get('virus_scan_enabled', '0') === '1';
+    }
 }
 ?>

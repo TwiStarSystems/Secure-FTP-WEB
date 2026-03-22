@@ -3,15 +3,18 @@
 require_once 'db.php';
 require_once 'auth.php';
 require_once 'rbac.php';
+require_once 'app_settings.php';
 
 class FileManager {
     private $db;
     private $auth;
+    private $appSettings;
     
     public function __construct($db, $auth) {
         $this->db = $db;
         $this->auth = $auth;
-        
+        $this->appSettings = new AppSettingsManager($db);
+
         // Create uploads directory if it doesn't exist with secure permissions
         if (!file_exists(UPLOAD_DIR)) {
             mkdir(UPLOAD_DIR, 0750, true);
@@ -91,10 +94,43 @@ class FileManager {
         
         // Calculate file hash
         $fileHash = hash_file($hashAlgorithm, $filepath);
-        
+
+        // Duplicate file detection — same hash within the same uploader's file set
+        $duplicate = $this->findDuplicate(
+            $fileHash, $hashAlgorithm,
+            $user ? $user['id'] : null,
+            $accessCode ? $accessCode['id'] : null
+        );
+        if ($duplicate) {
+            unlink($filepath);
+            return [
+                'success'           => false,
+                'duplicate'         => true,
+                'error'             => 'This file is identical to an existing upload: "' . $duplicate['original_filename'] . '".',
+                'existing_file_id'  => (int)$duplicate['id'],
+                'existing_filename' => $duplicate['original_filename']
+            ];
+        }
+
         // Get mime type
         $mimeType = mime_content_type($filepath);
-        
+
+        // Validate MIME type against admin-configured allowlist
+        $allowedMimeTypes = $this->appSettings->getAllowedMimeTypes();
+        if (!empty($allowedMimeTypes) && !in_array(strtolower((string)$mimeType), $allowedMimeTypes, true)) {
+            unlink($filepath);
+            return ['success' => false, 'error' => 'File type "' . $mimeType . '" is not permitted on this server.'];
+        }
+
+        // Optional ClamAV virus scan
+        if ($this->appSettings->isVirusScanEnabled()) {
+            $scanResult = $this->runClamAVScan($filepath);
+            if ($scanResult !== null && !$scanResult['clean']) {
+                unlink($filepath);
+                return ['success' => false, 'error' => 'File rejected: ' . $scanResult['message']];
+            }
+        }
+
         // Save to database
         $sql = "INSERT INTO files (filename, original_filename, file_size, file_hash, hash_algorithm, mime_type, uploaded_by_user, uploaded_by_code) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
@@ -325,6 +361,62 @@ class FileManager {
         }
         
         return round($bytes, $precision) . ' ' . $units[$i];
+    }
+
+    /**
+     * Return a duplicate file record if one with the same hash already exists
+     * for the same uploader (user or access code). Returns false/null if none.
+     */
+    private function findDuplicate($hash, $algorithm, $userId, $codeId) {
+        if ($userId !== null) {
+            return $this->db->fetch(
+                "SELECT id, original_filename FROM files WHERE file_hash = ? AND hash_algorithm = ? AND uploaded_by_user = ? LIMIT 1",
+                [$hash, $algorithm, $userId]
+            );
+        }
+        if ($codeId !== null) {
+            return $this->db->fetch(
+                "SELECT id, original_filename FROM files WHERE file_hash = ? AND hash_algorithm = ? AND uploaded_by_code = ? LIMIT 1",
+                [$hash, $algorithm, $codeId]
+            );
+        }
+        return null;
+    }
+
+    /**
+     * Run an optional ClamAV scan on a file already on disk.
+     * Returns null if ClamAV is unavailable or exec() is disabled (= skip silently).
+     * Returns ['clean' => bool, 'message' => string] otherwise.
+     */
+    private function runClamAVScan($filepath) {
+        if (!function_exists('exec')) {
+            return null;
+        }
+        // Prefer the daemon client (clamdscan) — faster; fall back to standalone clamscan.
+        $candidates = [
+            '/usr/bin/clamdscan',   '/usr/local/bin/clamdscan',
+            '/usr/bin/clamscan',    '/usr/local/bin/clamscan'
+        ];
+        $binary = null;
+        foreach ($candidates as $candidate) {
+            if (is_executable($candidate)) {
+                $binary = $candidate;
+                break;
+            }
+        }
+        if ($binary === null) {
+            return null; // ClamAV not installed — skip silently
+        }
+        $output   = [];
+        $exitCode = 0;
+        exec($binary . ' --no-summary ' . escapeshellarg($filepath) . ' 2>&1', $output, $exitCode);
+        // 0 = clean, 1 = virus found, 2 = error
+        return [
+            'clean'   => $exitCode === 0,
+            'message' => $exitCode === 1
+                ? 'Malware detected. File has been rejected.'
+                : 'Scan error: ' . trim(implode(' ', array_filter($output)))
+        ];
     }
 }
 ?>

@@ -332,6 +332,19 @@ if ($currentUser) {
 }
 
 $csrfToken = $auth->generateCSRFToken();
+
+// AJAX upload: return JSON instead of rendering the full page
+if (
+    $uploadMessage !== null
+    && !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+    && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
+) {
+    // Include a fresh CSRF token so the client can update the hidden field
+    $uploadMessage['csrf_token'] = $auth->generateCSRFToken();
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($uploadMessage, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -357,6 +370,11 @@ $csrfToken = $auth->generateCSRFToken();
                         <strong>File Hash (<?php echo strtoupper($uploadMessage['data']['hash_algorithm']); ?>):</strong><br>
                         <span id="upload-hash"><?php echo htmlspecialchars($uploadMessage['data']['file_hash']); ?></span>
                         <button type="button" onclick="copyHash('upload-hash')" class="btn btn-small" style="margin-left: 10px;">Copy</button>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($uploadMessage['duplicate']) && isset($uploadMessage['existing_file_id'])): ?>
+                    <div style="margin-top:0.5rem;">
+                        <a href="download.php?id=<?php echo (int)$uploadMessage['existing_file_id']; ?>" class="btn btn-small">Download existing file</a>
                     </div>
                 <?php endif; ?>
                 <?php if (isset($uploadMessage['share_url'])): ?>
@@ -403,7 +421,13 @@ $csrfToken = $auth->generateCSRFToken();
                     </select>
                 </div>
                 
-                <button type="submit" class="btn">Upload File</button>
+                <button type="submit" class="btn" id="upload-submit-btn">Upload File</button>
+                <div id="upload-progress-wrapper" style="display:none; margin-top:1rem;">
+                    <div style="background:var(--color-border,#333); border-radius:4px; overflow:hidden; height:1.25rem;">
+                        <div id="upload-progress-fill" style="height:100%; width:0%; background:var(--color-accent,#00bcd4); transition:width 0.2s ease;"></div>
+                    </div>
+                    <small id="upload-progress-label" style="display:block; margin-top:0.4rem; color:var(--color-muted);">Uploading…</small>
+                </div>
             </form>
         </div>
         
@@ -419,7 +443,7 @@ $csrfToken = $auth->generateCSRFToken();
                                 <th>Filename</th>
                                 <?php if ($isAdmin): ?><th>Owner</th><?php endif; ?>
                                 <th>Size</th>
-                                <th>Hash (<?php echo strtoupper(DEFAULT_HASH_ALGORITHM); ?>)</th>
+                                <th>Hash</th>
                                 <th>Uploaded</th>
                                 <th>Downloads</th>
                                 <th>Actions</th>
@@ -434,7 +458,7 @@ $csrfToken = $auth->generateCSRFToken();
                                     <?php endif; ?>
                                     <td><?php echo $fileManager->formatBytes($file['file_size']); ?></td>
                                     <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash']); ?>">
-                                        <span class="hash-short"><?php echo substr($file['file_hash'], 0, 16); ?>...</span>
+                                        <span class="hash-short"><small class="text-muted"><?php echo strtoupper($file['hash_algorithm'] ?? DEFAULT_HASH_ALGORITHM); ?>:</small> <?php echo substr($file['file_hash'], 0, 16); ?>...</span>
                                         <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($file['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
                                     </td>
                                     <td><?php echo date('Y-m-d H:i', strtotime($file['upload_date'])); ?></td>
@@ -529,23 +553,28 @@ $csrfToken = $auth->generateCSRFToken();
         }
         
         function copyToClipboard(text) {
-            // Create temporary textarea to copy text
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            
-            try {
-                document.execCommand('copy');
-                // Show brief confirmation
-                alert('Hash copied to clipboard!');
-            } catch (err) {
-                alert('Failed to copy hash');
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(function() {
+                    const btn = document.activeElement;
+                    if (btn && btn !== document.body) {
+                        const orig = btn.textContent;
+                        btn.textContent = 'Copied!';
+                        setTimeout(function() { btn.textContent = orig; }, 1500);
+                    }
+                }).catch(function() { _clipboardFallback(text); });
+            } else {
+                _clipboardFallback(text);
             }
-            
-            document.body.removeChild(textarea);
+        }
+
+        function _clipboardFallback(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch(e) {}
+            document.body.removeChild(ta);
         }
         
         function copyHash(elementId) {
@@ -582,6 +611,126 @@ $csrfToken = $auth->generateCSRFToken();
                 closeEmailShareModal();
             }
         });
+
+        // XHR upload with progress bar
+        (function() {
+            var form = document.querySelector('.upload-form');
+            if (!form) return;
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                var wrapper = document.getElementById('upload-progress-wrapper');
+                var fill    = document.getElementById('upload-progress-fill');
+                var label   = document.getElementById('upload-progress-label');
+                var btn     = document.getElementById('upload-submit-btn');
+
+                wrapper.style.display = 'block';
+                btn.disabled = true;
+                fill.style.width = '0%';
+                label.textContent = 'Starting upload\u2026';
+
+                var xhr = new XMLHttpRequest();
+
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        var pct = Math.round(e.loaded / e.total * 100);
+                        fill.style.width = pct + '%';
+                        label.textContent = 'Uploading\u2026 ' + pct + '%  (' + fmtBytes(e.loaded) + ' / ' + fmtBytes(e.total) + ')';
+                    }
+                });
+
+                xhr.addEventListener('load', function() {
+                    wrapper.style.display = 'none';
+                    btn.disabled = false;
+                    if (xhr.status === 200) {
+                        try {
+                            var res = JSON.parse(xhr.responseText);
+                            // Refresh CSRF token in all forms on the page
+                            if (res.csrf_token) {
+                                document.querySelectorAll('input[name="csrf_token"]').forEach(function(el) {
+                                    el.value = res.csrf_token;
+                                });
+                            }
+                            showUploadAlert(res);
+                        } catch(err) {
+                            location.reload();
+                        }
+                    } else {
+                        showUploadAlert({type:'error', message:'Upload failed (HTTP ' + xhr.status + '). Please try again.'});
+                    }
+                });
+
+                xhr.addEventListener('error', function() {
+                    wrapper.style.display = 'none';
+                    btn.disabled = false;
+                    showUploadAlert({type:'error', message:'Network error during upload. Please try again.'});
+                });
+
+                xhr.addEventListener('abort', function() {
+                    wrapper.style.display = 'none';
+                    btn.disabled = false;
+                });
+
+                xhr.open('POST', 'index.php');
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                xhr.send(new FormData(form));
+            });
+
+            function showUploadAlert(res) {
+                var existing = document.getElementById('xhr-upload-alert');
+                if (existing) existing.remove();
+
+                var div = document.createElement('div');
+                div.id = 'xhr-upload-alert';
+                div.className = 'alert alert-' + (res.type === 'success' ? 'success' : 'error');
+
+                var html = esc(res.message || '');
+
+                if (res.type === 'success' && res.data) {
+                    html += '<div class="hash-info"><strong>File Hash (' + esc(res.data.hash_algorithm.toUpperCase()) + '):</strong><br>'
+                        + '<span id="xhr-upload-hash">' + esc(res.data.file_hash) + '</span>'
+                        + '<button type="button" onclick="copyHash(\'xhr-upload-hash\')" class="btn btn-small" style="margin-left:10px">Copy</button></div>';
+                }
+
+                if (res.share_url) {
+                    html += '<div class="share-url-display"><strong>Share URL:</strong>'
+                        + '<input type="text" value="' + esc(res.share_url) + '" readonly onclick="this.select();" class="share-url-input">'
+                        + '<button type="button" onclick="copyShareUrl(this)" class="btn btn-small">Copy</button></div>';
+                }
+
+                if (res.duplicate && res.existing_file_id) {
+                    html += '<div style="margin-top:0.5rem;"><a href="download.php?id=' + encodeURIComponent(res.existing_file_id) + '" class="btn btn-small">Download existing file</a></div>';
+                }
+
+                div.innerHTML = html;
+
+                var container = document.querySelector('.container');
+                var firstCard = container && container.querySelector('.card');
+                if (firstCard) {
+                    container.insertBefore(div, firstCard);
+                } else if (container) {
+                    container.prepend(div);
+                }
+
+                div.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+                if (res.type === 'success') {
+                    setTimeout(function() { location.reload(); }, 1800);
+                }
+            }
+
+            function fmtBytes(b) {
+                if (b < 1024) return b + ' B';
+                if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+                if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+                return (b/1073741824).toFixed(2) + ' GB';
+            }
+
+            function esc(s) {
+                return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            }
+        }());
     </script>
     
     <?php include 'footer.php'; ?>

@@ -122,7 +122,17 @@ header('Content-Length: ' . filesize($result['filepath']));
 header('Cache-Control: no-cache, must-revalidate');
 header('Pragma: public');
 
-// Output file
-readfile($result['filepath']);
+// Stream file to client in chunks to avoid loading the entire file into PHP memory
+if (ob_get_level()) {
+    ob_end_clean();
+}
+$_fh = fopen($result['filepath'], 'rb');
+if ($_fh !== false) {
+    while (!feof($_fh)) {
+        echo fread($_fh, 65536);
+        flush();
+    }
+    fclose($_fh);
+}
 exit;
 ?>
