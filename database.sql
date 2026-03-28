@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS files (
     file_size BIGINT NOT NULL,
     file_hash VARCHAR(128),
     hash_algorithm VARCHAR(20),
+    encryption_iv VARCHAR(24) NULL,
     mime_type VARCHAR(100),
     uploaded_by_user INT NULL,
     uploaded_by_code INT NULL,

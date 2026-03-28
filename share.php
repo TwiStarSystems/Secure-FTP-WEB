@@ -361,7 +361,7 @@ class ShareManager {
      * Get share by token
      */
     public function getShareByToken($token) {
-        $sql = "SELECT sf.*, f.filename, f.original_filename, f.file_size, f.mime_type, f.file_hash, f.hash_algorithm,
+        $sql = "SELECT sf.*, f.filename, f.original_filename, f.file_size, f.mime_type, f.file_hash, f.hash_algorithm, f.encryption_iv,
                        u.username as shared_by_username
                 FROM shared_files sf
                 JOIN files f ON sf.file_id = f.id

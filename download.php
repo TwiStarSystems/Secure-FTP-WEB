@@ -118,7 +118,7 @@ $safeFilename = str_replace(["\r", "\n", "\0"], '', $safeFilename);
 // Set headers for file download
 header('Content-Type: ' . $result['mime_type']);
 header('Content-Disposition: attachment; filename="' . $safeFilename . '"');
-header('Content-Length: ' . filesize($result['filepath']));
+header('Content-Length: ' . $result['file_size']);
 header('Cache-Control: no-cache, must-revalidate');
 header('Pragma: public');
 
@@ -126,13 +126,23 @@ header('Pragma: public');
 if (ob_get_level()) {
     ob_end_clean();
 }
-$_fh = fopen($result['filepath'], 'rb');
-if ($_fh !== false) {
-    while (!feof($_fh)) {
-        echo fread($_fh, 65536);
-        flush();
+
+// Decrypt on-the-fly if file was encrypted at rest
+if (!empty($result['encryption_iv'])) {
+    $ok = FileManager::decryptFileStream($result['filepath'], $result['encryption_iv']);
+    if (!$ok) {
+        http_response_code(500);
+        // Headers already sent; can't display a friendly error page
     }
-    fclose($_fh);
+} else {
+    $_fh = fopen($result['filepath'], 'rb');
+    if ($_fh !== false) {
+        while (!feof($_fh)) {
+            echo fread($_fh, 65536);
+            flush();
+        }
+        fclose($_fh);
+    }
 }
 exit;
 ?>

@@ -43,6 +43,11 @@ define('SHARE_REQUEST_LOCKOUT_SECONDS', 900); // 15 minutes
 define('HASH_ALGORITHMS', ['sha256', 'sha512', 'sha1']);
 define('DEFAULT_HASH_ALGORITHM', 'sha256');
 
+// File encryption at rest (AES-256-GCM)
+// IMPORTANT: Generated during installation. Do NOT change after files are uploaded!
+// 64 hex characters = 32 bytes = 256-bit key
+define('FILE_ENCRYPTION_KEY', 'CHANGE_THIS_KEY');
+
 // Publicly accessible routes (no authentication required)
 define('PUBLIC_ENTRYPOINTS', ['login.php', 'public.php', 'shared.php', 'logout.php', 'forgot_password.php', 'reset_password.php']);
 

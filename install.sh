@@ -236,6 +236,9 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     INDEX idx_reset_token_hash (token_hash),
     INDEX idx_reset_expires_at (expires_at)
 );
+
+-- Add encryption_iv column for AES-256-GCM file encryption at rest
+ALTER TABLE files ADD COLUMN IF NOT EXISTS encryption_iv VARCHAR(24) NULL AFTER hash_algorithm;
 SQL
 
     print_message "Database migrations completed."
@@ -693,6 +696,23 @@ print_message "Application files installed successfully"
 
 if [ "$UPDATE_MODE" = true ]; then
     run_update_db_migrations "${APP_DIR}"
+
+    # Generate file encryption key if not already set
+    if [ -f "${APP_DIR}/config.php" ]; then
+        if grep -q "define('FILE_ENCRYPTION_KEY', 'CHANGE_THIS_KEY')" "${APP_DIR}/config.php"; then
+            FILE_ENC_KEY=$(openssl rand -hex 32)
+            sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/config.php
+            print_message "File encryption key generated for new encryption-at-rest feature"
+        elif ! grep -q "FILE_ENCRYPTION_KEY" "${APP_DIR}/config.php"; then
+            FILE_ENC_KEY=$(openssl rand -hex 32)
+            # Append the define after the HASH line
+            sed -i "/define('DEFAULT_HASH_ALGORITHM'/a\\
+\\n// File encryption at rest (AES-256-GCM)\\n// IMPORTANT: Generated during installation. Do NOT change after files are uploaded!\\n// 64 hex characters = 32 bytes = 256-bit key\\ndefine('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');" ${APP_DIR}/config.php
+            print_message "File encryption key added to config.php for new encryption-at-rest feature"
+        else
+            print_message "File encryption key already configured"
+        fi
+    fi
 fi
 
 # Import database schema - skip in update mode
@@ -718,6 +738,11 @@ if [ "$UPDATE_MODE" = false ]; then
         sed -i "s|define('DB_PASS', '[^']*').*|define('DB_PASS', '${DB_PASS_ESCAPED}');|" ${APP_DIR}/config.php
         sed -i "s|define('DB_USER', '[^']*').*|define('DB_USER', '${DB_USER}');|" ${APP_DIR}/config.php
         sed -i "s|define('DB_NAME', '[^']*').*|define('DB_NAME', '${DB_NAME}');|" ${APP_DIR}/config.php
+        
+        # Generate and set file encryption key (AES-256 = 32 bytes = 64 hex chars)
+        FILE_ENC_KEY=$(openssl rand -hex 32)
+        sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/config.php
+        print_message "File encryption key generated and configured"
         
         # Verify the changes were made
         if grep -q "define('DB_PASS', '${DB_PASS_ESCAPED}');" ${APP_DIR}/config.php; then

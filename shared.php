@@ -6,6 +6,7 @@
 require_once 'config.php';
 require_once 'db.php';
 require_once 'share.php';
+require_once 'files.php';
 require_once 'security_monitor.php';
 
 $db = new Database();
@@ -320,7 +321,7 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
     // Set headers for file download
     header('Content-Type: ' . $share['mime_type']);
     header('Content-Disposition: attachment; filename="' . $safeFilename . '"');
-    header('Content-Length: ' . filesize($filepath));
+    header('Content-Length: ' . $share['file_size']);
     header('Cache-Control: no-cache, must-revalidate');
     header('Pragma: public');
     
@@ -328,13 +329,22 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
     if (ob_get_level()) {
         ob_end_clean();
     }
-    $_fh = fopen($filepath, 'rb');
-    if ($_fh !== false) {
-        while (!feof($_fh)) {
-            echo fread($_fh, 65536);
-            flush();
+
+    // Decrypt on-the-fly if file was encrypted at rest
+    if (!empty($share['encryption_iv'])) {
+        $ok = FileManager::decryptFileStream($filepath, $share['encryption_iv']);
+        if (!$ok) {
+            http_response_code(500);
         }
-        fclose($_fh);
+    } else {
+        $_fh = fopen($filepath, 'rb');
+        if ($_fh !== false) {
+            while (!feof($_fh)) {
+                echo fread($_fh, 65536);
+                flush();
+            }
+            fclose($_fh);
+        }
     }
     exit;
 }

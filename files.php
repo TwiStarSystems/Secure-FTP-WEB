@@ -131,9 +131,20 @@ class FileManager {
             }
         }
 
+        // Encrypt file at rest (AES-256-GCM)
+        $encryptionIv = null;
+        if (self::isEncryptionEnabled()) {
+            $encResult = self::encryptFile($filepath);
+            if (!$encResult['success']) {
+                unlink($filepath);
+                return ['success' => false, 'error' => 'Encryption failed: ' . $encResult['error']];
+            }
+            $encryptionIv = $encResult['iv'];
+        }
+
         // Save to database
-        $sql = "INSERT INTO files (filename, original_filename, file_size, file_hash, hash_algorithm, mime_type, uploaded_by_user, uploaded_by_code) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO files (filename, original_filename, file_size, file_hash, hash_algorithm, encryption_iv, mime_type, uploaded_by_user, uploaded_by_code) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $userId = $user ? $user['id'] : null;
         $codeId = $accessCode ? $accessCode['id'] : null;
@@ -144,6 +155,7 @@ class FileManager {
             $file['size'],
             $fileHash,
             $hashAlgorithm,
+            $encryptionIv,
             $mimeType,
             $userId,
             $codeId
@@ -270,7 +282,9 @@ class FileManager {
             'success' => true,
             'filepath' => $filepath,
             'filename' => $file['original_filename'],
-            'mime_type' => $file['mime_type']
+            'mime_type' => $file['mime_type'],
+            'file_size' => (int)$file['file_size'],
+            'encryption_iv' => $file['encryption_iv'] ?? null
         ];
     }
     
@@ -418,5 +432,149 @@ class FileManager {
                 : 'Scan error: ' . trim(implode(' ', array_filter($output)))
         ];
     }
+
+    /**
+     * Check whether file encryption at rest is enabled and properly configured.
+     */
+    public static function isEncryptionEnabled() {
+        return defined('FILE_ENCRYPTION_KEY')
+            && FILE_ENCRYPTION_KEY !== 'CHANGE_THIS_KEY'
+            && strlen(FILE_ENCRYPTION_KEY) === 64
+            && ctype_xdigit(FILE_ENCRYPTION_KEY);
+    }
+
+    /**
+     * Encrypt a file on disk in-place using AES-256-GCM with chunked streaming.
+     *
+     * Format: sequential blocks of [4-byte BE ciphertext length][ciphertext][16-byte GCM tag].
+     * Each 1 MB plaintext chunk is encrypted with a per-chunk IV derived from
+     * the base IV XORed with a big-endian chunk counter.
+     *
+     * @param  string $filepath  Absolute path to the plaintext file.
+     * @return array  ['success' => bool, 'iv' => hex-encoded 12-byte base IV] on success.
+     */
+    public static function encryptFile($filepath) {
+        $key = hex2bin(FILE_ENCRYPTION_KEY);
+        if (strlen($key) !== 32) {
+            return ['success' => false, 'error' => 'Invalid encryption key length.'];
+        }
+
+        $baseIv = random_bytes(12);
+        $chunkSize = 1048576; // 1 MB
+        $tempPath = $filepath . '.enc';
+
+        $in  = fopen($filepath, 'rb');
+        $out = fopen($tempPath, 'wb');
+        if ($in === false || $out === false) {
+            if ($in)  fclose($in);
+            if ($out) fclose($out);
+            @unlink($tempPath);
+            return ['success' => false, 'error' => 'Could not open file for encryption.'];
+        }
+
+        $chunkIndex = 0;
+        while (!feof($in)) {
+            $chunk = fread($in, $chunkSize);
+            if ($chunk === '' || $chunk === false) break;
+
+            $iv = self::deriveChunkIv($baseIv, $chunkIndex);
+            $tag = '';
+            $encrypted = openssl_encrypt($chunk, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
+            if ($encrypted === false) {
+                fclose($in);
+                fclose($out);
+                @unlink($tempPath);
+                return ['success' => false, 'error' => 'openssl_encrypt failed on chunk ' . $chunkIndex];
+            }
+
+            fwrite($out, pack('N', strlen($encrypted)));
+            fwrite($out, $encrypted);
+            fwrite($out, $tag);
+
+            $chunkIndex++;
+        }
+
+        fclose($in);
+        fclose($out);
+
+        // Atomic replace: remove original, rename encrypted file
+        unlink($filepath);
+        rename($tempPath, $filepath);
+
+        return ['success' => true, 'iv' => bin2hex($baseIv)];
+    }
+
+    /**
+     * Decrypt an AES-256-GCM encrypted file and stream it directly to the output buffer.
+     *
+     * @param  string      $filepath  Path to the encrypted file on disk.
+     * @param  string      $ivHex     Hex-encoded 12-byte base IV from the database.
+     * @return bool        True on success, false on failure (tampered data or wrong key).
+     */
+    public static function decryptFileStream($filepath, $ivHex) {
+        $key = hex2bin(FILE_ENCRYPTION_KEY);
+        $baseIv = hex2bin($ivHex);
+
+        $fh = fopen($filepath, 'rb');
+        if ($fh === false) return false;
+
+        $chunkIndex = 0;
+        while (!feof($fh)) {
+            $lenData = fread($fh, 4);
+            if ($lenData === false || strlen($lenData) < 4) break;
+
+            $len = unpack('N', $lenData)[1];
+            if ($len === 0 || $len > 1048576 + 256) break; // sanity: no chunk larger than ~1 MB + GCM overhead
+
+            $ciphertext = '';
+            $remaining = $len;
+            while ($remaining > 0 && !feof($fh)) {
+                $read = fread($fh, $remaining);
+                if ($read === false) break;
+                $ciphertext .= $read;
+                $remaining -= strlen($read);
+            }
+
+            $tag = '';
+            $tagRemaining = 16;
+            while ($tagRemaining > 0 && !feof($fh)) {
+                $read = fread($fh, $tagRemaining);
+                if ($read === false) break;
+                $tag .= $read;
+                $tagRemaining -= strlen($read);
+            }
+
+            if (strlen($ciphertext) !== $len || strlen($tag) !== 16) {
+                fclose($fh);
+                return false;
+            }
+
+            $iv = self::deriveChunkIv($baseIv, $chunkIndex);
+            $decrypted = openssl_decrypt($ciphertext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+            if ($decrypted === false) {
+                fclose($fh);
+                return false; // Authentication failed — tampered data or wrong key
+            }
+
+            echo $decrypted;
+            flush();
+
+            $chunkIndex++;
+        }
+
+        fclose($fh);
+        return true;
+    }
+
+    /**
+     * Derive a per-chunk IV by XORing the first 4 bytes of the base IV with a big-endian chunk counter.
+     */
+    private static function deriveChunkIv($baseIv, $chunkIndex) {
+        $iv = $baseIv;
+        $counter = pack('N', $chunkIndex);
+        for ($i = 0; $i < 4; $i++) {
+            $iv[$i] = $iv[$i] ^ $counter[$i];
+        }
+        return $iv;
+    }
 }
-?>
