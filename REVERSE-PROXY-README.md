@@ -14,7 +14,7 @@ This application is fully compatible with Nginx reverse proxy deployments.
 - Works correctly whether behind proxy or direct access
 
 ### 3. Dynamic Session Security
-- Session cookies automatically set `secure` flag when behind HTTPS proxy
+- Session cookies automatically set `secure` flag when behind an HTTPS-terminating reverse proxy
 - Respects `X-Forwarded-Proto` and `X-Forwarded-SSL` headers
 
 ## Files

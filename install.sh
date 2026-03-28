@@ -47,7 +47,6 @@ DB_USER="secure_ftp_user"
 NGINX_CONF="/etc/nginx/sites-available/secure-ftp.conf"
 NGINX_ENABLED="/etc/nginx/sites-enabled/secure-ftp.conf"
 DOMAIN_NAME=""
-SETUP_SSL=false
 
 # Function to print colored messages
 print_message() {
@@ -455,24 +454,6 @@ else
         print_message "Domain set to: $DOMAIN_NAME"
     fi
 
-    # Ask about SSL
-    print_step "SSL/HTTPS configuration"
-    echo ""
-    echo "Do you want to set up SSL/HTTPS with Let's Encrypt?"
-    echo "Note: You must have a valid domain name pointing to this server."
-    if [ "$DOMAIN_NAME" = "_" ]; then
-        print_warning "SSL setup requires a domain name. Skipping SSL configuration."
-        SETUP_SSL=false
-    else
-        if prompt_yes_no "Set up SSL/HTTPS now?" "n"; then
-            SETUP_SSL=true
-            print_message "SSL will be configured after installation."
-        else
-            SETUP_SSL=false
-            print_message "SSL can be configured later manually."
-        fi
-    fi
-
     # Database configuration
     print_step "Database configuration"
     echo ""
@@ -484,7 +465,6 @@ else
     echo -e "${CYAN}Installation Settings:${NC}"
     echo "  Application Path:    $APP_DIR"
     echo "  Domain Name:         $DOMAIN_NAME"
-    echo "  SSL/HTTPS:           $([ "$SETUP_SSL" = true ] && echo 'Yes' || echo 'No')"
     echo "  Database Name:       $DB_NAME"
     echo "  Database User:       $DB_USER"
     echo ""
@@ -888,7 +868,7 @@ systemctl restart php${PHP_VERSION}-fpm
 systemctl restart nginx
 print_message "Services restarted successfully"
 
-# Skip admin user creation and SSL setup in update mode
+# Skip admin user creation in update mode
 if [ "$UPDATE_MODE" = true ]; then
     # Get server IP address
     SERVER_IP=$(hostname -I | awk '{print $1}')
@@ -971,49 +951,18 @@ mysql ${DB_NAME} -e "INSERT INTO users (username, password_hash, email, role, is
 
 print_message "Admin user '${ADMIN_USER}' created successfully with admin role"
 
-# SSL Configuration
-if [ "$SETUP_SSL" = true ]; then
-    print_header "STEP 16: SSL Configuration"
-    print_message "Installing Certbot for Let's Encrypt..."
-    
-    apt-get install -y certbot python3-certbot-nginx
-    
-    print_message "Obtaining SSL certificate..."
-    echo ""
-    print_warning "Make sure your domain ${DOMAIN_NAME} points to this server's IP address."
-    echo ""
-    
-    if prompt_yes_no "Ready to obtain SSL certificate?" "y"; then
-        if certbot --nginx -d ${DOMAIN_NAME} --non-interactive --agree-tos --register-unsafely-without-email; then
-            print_message "SSL certificate installed successfully"
-            
-            # Update config.php to enable secure cookies
-            sed -i "s/ini_set('session.cookie_secure', 0);/ini_set('session.cookie_secure', 1);/" ${APP_DIR}/config.php
-            print_message "Application configured for HTTPS"
-        else
-            print_warning "SSL certificate installation failed. You can set it up manually later."
-            print_message "Run: sudo certbot --nginx -d ${DOMAIN_NAME}"
-        fi
-    else
-        print_message "SSL setup skipped. You can run it later with:"
-        echo "  sudo certbot --nginx -d ${DOMAIN_NAME}"
-    fi
-fi
-
 # Get server IP address
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
 # Determine access URL
-if [ "$SETUP_SSL" = true ] && [ "$DOMAIN_NAME" != "_" ]; then
-    ACCESS_URL="https://${DOMAIN_NAME}"
-elif [ "$DOMAIN_NAME" != "_" ]; then
+if [ "$DOMAIN_NAME" != "_" ]; then
     ACCESS_URL="http://${DOMAIN_NAME}"
 else
     ACCESS_URL="http://${SERVER_IP}"
 fi
 
 # Save credentials to file
-print_header "STEP $([ "$SETUP_SSL" = true ] && echo "17" || echo "16"): Saving Configuration"
+print_header "STEP 16: Saving Configuration"
 CREDS_FILE="${SCRIPT_DIR}/installation_credentials.txt"
 cat > ${CREDS_FILE} << EOF
 =================================================
@@ -1026,7 +975,6 @@ SERVER INFORMATION:
 ------------------
 Server IP: ${SERVER_IP}
 Domain: ${DOMAIN_NAME}
-SSL/HTTPS: $([ "$SETUP_SSL" = true ] && echo "Enabled" || echo "Not configured")
 
 DATABASE CREDENTIALS:
 --------------------
@@ -1055,7 +1003,7 @@ IMPORTANT SECURITY NOTES:
 1. Keep this file secure and delete it after noting the credentials
 2. Change the admin password after first login
 3. Configure a firewall to restrict access
-$([ "$SETUP_SSL" = false ] && echo "4. Consider setting up SSL/HTTPS for production use")
+4. Place behind a reverse proxy with SSL/TLS if exposing publicly
 5. Regularly backup the database and uploads directory
 6. Review SECURITY.md for additional hardening steps
 
@@ -1064,13 +1012,9 @@ NEXT STEPS:
 1. Access the application at ${ACCESS_URL}
 2. Login with admin credentials
 3. Change default passwords in admin panel
-$([ "$SETUP_SSL" = false ] && echo "4. Set up SSL certificate (recommended)")
+4. Set up a reverse proxy if making publicly accessible (see REVERSE-PROXY-README.md)
 5. Create regular users or access codes
 6. Configure regular backups
-
-$([ "$SETUP_SSL" = false ] && [ "$DOMAIN_NAME" != "_" ] && echo "For SSL setup with Let's Encrypt:
-    sudo apt install certbot python3-certbot-nginx
-    sudo certbot --nginx -d ${DOMAIN_NAME}")
 
 USEFUL COMMANDS:
 ---------------
@@ -1105,7 +1049,6 @@ echo -e "${GREEN}✓${NC} MariaDB database server configured"
 echo -e "${GREEN}✓${NC} Application files deployed"
 echo -e "${GREEN}✓${NC} Database schema imported"
 echo -e "${GREEN}✓${NC} Admin user created"
-$([ "$SETUP_SSL" = true ] && echo -e "${GREEN}✓${NC} SSL certificate installed")
 echo ""
 echo "================================================================"
 echo -e "${CYAN}ACCESS YOUR APPLICATION:${NC}"
@@ -1125,20 +1068,13 @@ echo "     ${RED}Please save these credentials and DELETE this file!${NC}"
 echo ""
 echo "  2. Change the admin password after first login"
 echo ""
-$([ "$SETUP_SSL" = false ] && echo "  3. Set up SSL/HTTPS for production use")
-echo "  $([ "$SETUP_SSL" = false ] && echo "4" || echo "3"). Configure firewall rules"
+echo "  3. Configure firewall rules"
 echo ""
-echo "  $([ "$SETUP_SSL" = false ] && echo "5" || echo "4"). Set up regular backups"
+echo "  4. Set up regular backups"
+echo ""
+echo "  5. Use a reverse proxy with SSL if exposing publicly"
 echo ""
 echo "================================================================"
-$([ "$SETUP_SSL" = false ] && [ "$DOMAIN_NAME" != "_" ] && cat << SSLEOF
-echo ""
-echo -e "${BLUE}To set up SSL later, run:${NC}"
-echo "  sudo apt install certbot python3-certbot-nginx"
-echo "  sudo certbot --nginx -d ${DOMAIN_NAME}"
-echo ""
-SSLEOF
-)
 echo "================================================================"
 echo ""
 print_message "Thank you for using Secure FTP Web Application!"

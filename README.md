@@ -18,7 +18,7 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 - **Admin Login**: Full administrative control with user management capabilities
 - **User Management**: Create regular and temporary users with auto-deletion on expiry dates
 - **Access Codes**: Generate temporary access codes with limited login counts and expiry dates
-- **SMTP Email Settings**: Configure SMTP (TLS/SSL) from Settings with built-in test email support
+- **SMTP Email Settings**: Configure SMTP (TLS/SSL/STARTTLS) from Settings with built-in test email support
 - **Multi-Factor Authentication (MFA)**: Per-user enable/disable for TOTP app codes and Email verification codes
 - **Tabbed Settings Interface**: User Settings, User Management, Site Settings, and Security Events sections
 - **Security Events Viewer**: Admin-accessible audit view for abuse lockouts and suspicious activity
@@ -93,9 +93,10 @@ A secure, web-based file transfer system built with PHP that provides enterprise
 - **Permissions**: Root or sudo access required for installation
 
 #### Network
-- Ports 80 (HTTP) and/or 443 (HTTPS) accessible
-- Domain name (optional, but recommended for SSL)
+- Port 80 (HTTP) accessible
+- Domain name (optional)
 - Static IP or DDNS if self-hosting
+- Reverse proxy recommended if exposing publicly (see REVERSE-PROXY-README.md)
 
 ### Quick Installation (Recommended)
 
@@ -117,7 +118,6 @@ The easiest way to install is using the automated installation wizard:
    The installer will guide you through:
    - Choosing the installation directory
    - Configuring your domain name
-   - Setting up SSL/HTTPS (optional)
    - Database configuration
    - Creating an admin account
    
@@ -144,7 +144,7 @@ The automated installer (`install.sh`) performs a complete system setup:
 - ✅ Sets up FastCGI parameters for PHP
 - ✅ Configures large file upload support (10GB limit)
 - ✅ Enables gzip compression for better performance
-- ✅ Optionally configures SSL/HTTPS with Let's Encrypt
+- ✅ Ready for reverse proxy deployment (see REVERSE-PROXY-README.md)
 
 #### 3. PHP Installation & Configuration
 - ✅ Installs PHP-FPM with all required extensions
@@ -340,17 +340,13 @@ Secure-FTP-WEB/
 3. **Important**: Consider changing your admin password in the admin panel
 
 ### Recommended Next Steps
-1. **Configure SSL/HTTPS** (if not done during installation)
-   ```bash
-   sudo apt install certbot python3-certbot-nginx
-   sudo certbot --nginx -d your-domain.com
-   ```
+1. **Set up a reverse proxy** if exposing publicly (see `REVERSE-PROXY-README.md`)
+   - The app is HTTP-only; SSL/TLS should be terminated at the reverse proxy
 
 2. **Set up firewall**
    ```bash
    sudo ufw allow 22/tcp    # SSH
    sudo ufw allow 80/tcp    # HTTP
-   sudo ufw allow 443/tcp   # HTTPS
    sudo ufw enable
    ```
 

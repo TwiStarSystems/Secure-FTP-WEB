@@ -58,9 +58,8 @@ date_default_timezone_set('UTC');
 ini_set('session.cookie_httponly', 1);  // Prevent JavaScript access to session cookies
 ini_set('session.use_only_cookies', 1); // Only use cookies for session management
 
-// Dynamically set secure flag based on HTTPS (including behind proxy)
-$isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') 
-    || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+// Dynamically set secure flag when behind a reverse proxy that terminates SSL
+$isSecure = (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
     || (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on');
 ini_set('session.cookie_secure', $isSecure ? 1 : 0);
 
@@ -95,7 +94,7 @@ if (PHP_SAPI !== 'cli' && isset($_SERVER['SCRIPT_NAME'])) {
 
 /**
  * Get the current protocol (http or https)
- * Respects X-Forwarded-Proto and X-Forwarded-SSL headers from reverse proxy
+ * Detects HTTPS when behind a reverse proxy that terminates SSL
  */
 function getProtocol() {
     // Check X-Forwarded-Proto header (set by reverse proxy)
@@ -105,16 +104,6 @@ function getProtocol() {
     
     // Check X-Forwarded-SSL header
     if (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on') {
-        return 'https';
-    }
-    
-    // Fall back to standard HTTPS detection
-    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
-        return 'https';
-    }
-    
-    // Check if on standard HTTPS port
-    if (!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) {
         return 'https';
     }
     
