@@ -3,11 +3,11 @@
  * Password Reset Handler
  * Validates reset tokens and allows users to set a new password.
  */
-require_once 'config.php';
-require_once 'db.php';
-require_once 'auth.php';
-require_once 'users.php';
-require_once 'security_monitor.php';
+require_once APP_DIR . '/src/core/config.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/auth.php';
+require_once APP_DIR . '/src/services/users.php';
+require_once APP_DIR . '/src/services/security_monitor.php';
 
 $db = new Database();
 $auth = new Auth($db);
@@ -120,7 +120,7 @@ $csrfToken = $auth->generateCSRFToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Reset Password</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body class="login-page">
     <div class="login-container white-bg">
@@ -162,6 +162,6 @@ $csrfToken = $auth->generateCSRFToken();
         <?php endif; ?>
     </div>
 
-    <?php include 'footer.php'; ?>
+    <?php include APP_DIR . '/src/views/footer.php'; ?>
 </body>
 </html>

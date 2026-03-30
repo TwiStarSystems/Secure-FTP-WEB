@@ -1,9 +1,9 @@
 <?php
 // File management functions
-require_once 'db.php';
-require_once 'auth.php';
-require_once 'rbac.php';
-require_once 'app_settings.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/auth.php';
+require_once APP_DIR . '/src/services/rbac.php';
+require_once APP_DIR . '/src/services/app_settings.php';
 
 class FileManager {
     private $db;

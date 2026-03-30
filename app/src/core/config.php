@@ -11,7 +11,7 @@ define('DB_PASS', 'CHANGE_THIS_PASSWORD');  // Set a strong password
 // Application settings
 define('SITE_NAME', 'Secure File Transfer');
 define('MAX_FILE_SIZE', 10737418240); // 10 GB in bytes
-define('UPLOAD_DIR', __DIR__ . '/uploads/');
+define('UPLOAD_DIR', APP_BASE . '/app/storage/uploads/');
 define('SESSION_TIMEOUT', 3600); // 1 hour
 
 // Rate limiting settings

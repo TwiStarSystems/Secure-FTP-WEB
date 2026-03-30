@@ -1,7 +1,7 @@
 <?php
 // Security monitoring utilities for abuse prevention and audit logging
-require_once 'db.php';
-require_once 'app_settings.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/app_settings.php';
 
 class SecurityMonitor {
     private $db;

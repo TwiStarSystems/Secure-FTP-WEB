@@ -1,7 +1,7 @@
 <?php
 // User management functions (admin only)
-require_once 'db.php';
-require_once 'rbac.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/rbac.php';
 
 class UserManager {
     private $db;

@@ -1,6 +1,6 @@
 # Ignore uploads directory contents but keep the directory
-uploads/*
-!uploads/.gitkeep
+app/storage/uploads/*
+!app/storage/uploads/.gitkeep
 
 # Ignore IDE and editor files
 .vscode/
@@ -28,6 +28,9 @@ config.local.php
 
 # Ignore npm dependencies (if you add npm)
 node_modules/
+
+# Ignore installer-generated credentials file
+installs/installation_credentials.txt
 
 # Ignore backup files
 *.bak

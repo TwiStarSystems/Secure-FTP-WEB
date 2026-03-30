@@ -13,8 +13,8 @@ Options -Indexes
     RewriteRule ^$ /login.php [L,R=301]
 </IfModule>
 
-# Protect sensitive files
-<FilesMatch "^(config\.php|db\.php|auth\.php|users\.php|files\.php|database\.sql)$">
+# Protect sensitive files (app code is outside document root, but extra safety)
+<FilesMatch "^\.">
     Require all denied
 </FilesMatch>
 

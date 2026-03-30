@@ -3,11 +3,11 @@
  * Shared File Download Handler
  * Handles downloads via share tokens (public access)
  */
-require_once 'config.php';
-require_once 'db.php';
-require_once 'share.php';
-require_once 'files.php';
-require_once 'security_monitor.php';
+require_once APP_DIR . '/src/core/config.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/share.php';
+require_once APP_DIR . '/src/services/files.php';
+require_once APP_DIR . '/src/services/security_monitor.php';
 
 $db = new Database();
 $shareManager = new ShareManager($db);
@@ -138,7 +138,7 @@ if (!$validation['valid'] && isset($validation['requires_password'])) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title><?php echo SITE_NAME; ?> - Password Protected</title>
-        <link rel="stylesheet" href="style.css">
+        <link rel="stylesheet" href="assets/css/style.css">
     </head>
     <body class="login-page">
         <div class="login-container white-bg">
@@ -205,7 +205,7 @@ if (!$validation['valid']) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title><?php echo SITE_NAME; ?> - Share Error</title>
-        <link rel="stylesheet" href="style.css">
+        <link rel="stylesheet" href="assets/css/style.css">
     </head>
     <body class="login-page">
         <div class="login-container white-bg">
@@ -234,7 +234,7 @@ if (!$recipientValidation['valid']) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title><?php echo SITE_NAME; ?> - Share Error</title>
-        <link rel="stylesheet" href="style.css">
+        <link rel="stylesheet" href="assets/css/style.css">
     </head>
     <body class="login-page">
         <div class="login-container white-bg">
@@ -357,7 +357,7 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Shared File</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body class="login-page">
     <div class="login-container white-bg shared-file-page">
@@ -436,6 +436,6 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
         }
     </script>
     
-    <?php include 'footer.php'; ?>
+    <?php include APP_DIR . '/src/views/footer.php'; ?>
 </body>
 </html>

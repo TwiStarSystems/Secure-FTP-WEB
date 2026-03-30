@@ -1,15 +1,15 @@
 <?php
 // Settings page (User & Admin Settings)
-require_once 'config.php';
-require_once 'db.php';
-require_once 'auth.php';
-require_once 'users.php';
-require_once 'files.php';
-require_once 'rbac.php';
-require_once 'app_settings.php';
-require_once 'smtp_mailer.php';
-require_once 'mfa.php';
-require_once 'security_monitor.php';
+require_once APP_DIR . '/src/core/config.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/auth.php';
+require_once APP_DIR . '/src/services/users.php';
+require_once APP_DIR . '/src/services/files.php';
+require_once APP_DIR . '/src/services/rbac.php';
+require_once APP_DIR . '/src/services/app_settings.php';
+require_once APP_DIR . '/src/support/smtp_mailer.php';
+require_once APP_DIR . '/src/services/mfa.php';
+require_once APP_DIR . '/src/services/security_monitor.php';
 
 $db = new Database();
 $auth = new Auth($db);
@@ -812,11 +812,11 @@ $csrfToken = $auth->generateCSRFToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Settings</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="assets/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body class="simple-page">
-    <?php include 'header.php'; ?>
+    <?php include APP_DIR . '/src/views/header.php'; ?>
     
     <div class="container<?php echo $isAdmin ? ' admin-container' : ''; ?>">
         <?php if ($message): ?>
@@ -1963,6 +1963,6 @@ $csrfToken = $auth->generateCSRFToken();
         <?php endif; ?>
     </div>
     
-    <?php include 'footer.php'; ?>
+    <?php include APP_DIR . '/src/views/footer.php'; ?>
 </body>
 </html>

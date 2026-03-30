@@ -1,7 +1,7 @@
 <?php
 // SMTP mailer utility
-require_once 'config.php';
-require_once 'app_settings.php';
+require_once APP_DIR . '/src/core/config.php';
+require_once APP_DIR . '/src/services/app_settings.php';
 
 class SMTPMailer {
     private $db;

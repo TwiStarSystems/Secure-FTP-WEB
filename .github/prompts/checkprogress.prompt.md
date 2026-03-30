@@ -1,8 +1,11 @@
-Do a full review of the entire app and create/update the tasklist.md with any new tasks/features that were found that need to be completed and mark any completed tasklist items as done.
+Please do a full review of the entire app and create/update the tasklist.md with any new tasks/features that were found that need to be completed and mark any completed tasklist items as done.
+
+If there are any bugs found during the review, add them to the bug list section of the tasklist.md file.
 
 Do a "git pull" to get the latest code changes before doing the review.
 
 TASK-LIST.md format:
+
 # Task List For <APP-NAME>
 
 > **Audited:** <DATETIME> \ <NUMBER-OF-COMMITS> commits since last audit
@@ -12,17 +15,23 @@ TASK-LIST.md format:
 
 ---
 
-# Overall Complete Percentage: <%>
+# Overall Progress Percentage: <%>
 
-## Summary 
+## Summary ##
 
-|   Area   |   Completed   |   Remaining   |   Completion   |
-|----------|---------------|---------------|----------------|
+|    Area    |    Completed    |    Remaining    |    Completion    |
+|------------|-----------------|-----------------|------------------|
 | <Section name> | <Completed-Items-Count> | <Items-Remaining> | <Completion%> |
 
 ---
-
-# <Section name> #
-## <SubSection name> ## [add subsections as required]
+# Task List Items #
+## <Section name> ##
+### <SubSection name> ### [add subsections as required]
 [ ] - <Uncomplete task>
 [X] - <Completed task>
+
+# Bug List # 
+## <Section name> ##
+### <SubSection name> ### [add subsections as required]
+[ ] - <Unfixed bug>
+[X] - <Fixed bug>

@@ -1,6 +1,6 @@
 <?php
 // Application settings helper
-require_once 'db.php';
+require_once APP_DIR . '/src/core/db.php';
 
 class AppSettingsManager {
     private $db;

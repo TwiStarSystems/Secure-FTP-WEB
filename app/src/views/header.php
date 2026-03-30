@@ -1,7 +1,7 @@
 <?php
 // Common header for all pages
 // Must be included after auth check and user info is loaded
-require_once 'rbac.php';
+require_once APP_DIR . '/src/services/rbac.php';
 
 $headerRole = RBAC::getCurrentRole();
 $headerIsAuthenticated = RBAC::isAuthenticated();

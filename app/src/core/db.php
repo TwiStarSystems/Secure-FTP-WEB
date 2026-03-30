@@ -1,6 +1,6 @@
 <?php
 // Database connection and helper functions
-require_once 'config.php';
+require_once APP_DIR . '/src/core/config.php';
 
 class Database {
     private $conn;

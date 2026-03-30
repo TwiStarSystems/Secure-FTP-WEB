@@ -1,8 +1,8 @@
 <?php
 // Authentication and rate limiting functions
-require_once 'db.php';
-require_once 'rbac.php';
-require_once 'mfa.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/rbac.php';
+require_once APP_DIR . '/src/services/mfa.php';
 
 class Auth {
     private $db;

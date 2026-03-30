@@ -3,8 +3,8 @@
  * Share Management Functions
  * Handles creating, managing, and accessing shared file links
  */
-require_once 'db.php';
-require_once 'rbac.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/rbac.php';
 
 class ShareManager {
     private $db;

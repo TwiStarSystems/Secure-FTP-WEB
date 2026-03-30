@@ -1,9 +1,9 @@
 <?php
 // Multi-Factor Authentication service (TOTP + Email Codes)
-require_once 'config.php';
-require_once 'db.php';
-require_once 'app_settings.php';
-require_once 'smtp_mailer.php';
+require_once APP_DIR . '/src/core/config.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/app_settings.php';
+require_once APP_DIR . '/src/support/smtp_mailer.php';
 
 class MFAService {
     private $db;

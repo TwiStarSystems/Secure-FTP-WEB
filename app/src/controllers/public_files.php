@@ -4,11 +4,11 @@
  * Shows all publicly shared files to anonymous users
  * This is the default landing page for non-authenticated users
  */
-require_once 'config.php';
-require_once 'db.php';
-require_once 'auth.php';
-require_once 'share.php';
-require_once 'rbac.php';
+require_once APP_DIR . '/src/core/config.php';
+require_once APP_DIR . '/src/core/db.php';
+require_once APP_DIR . '/src/services/auth.php';
+require_once APP_DIR . '/src/services/share.php';
+require_once APP_DIR . '/src/services/rbac.php';
 
 $db = new Database();
 $auth = new Auth($db);
@@ -28,10 +28,10 @@ $isAdmin = RBAC::isAdmin();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo SITE_NAME; ?> - Public Files</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body class="simple-page public-page">
-    <?php include 'header.php'; ?>
+    <?php include APP_DIR . '/src/views/header.php'; ?>
     
     <div class="container">
         <div class="page-intro">
@@ -96,6 +96,6 @@ $isAdmin = RBAC::isAdmin();
         <?php endif; ?>
     </div>
     
-    <?php include 'footer.php'; ?>
+    <?php include APP_DIR . '/src/views/footer.php'; ?>
 </body>
 </html>

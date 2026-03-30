@@ -131,7 +131,7 @@ extract_php_define() {
 # Run safe, idempotent DB migrations for update mode
 run_update_db_migrations() {
     local app_dir="$1"
-    local config_file="${app_dir}/config.php"
+    local config_file="${app_dir}/app/src/core/config.php"
 
     if [ ! -f "$config_file" ]; then
         print_warning "config.php not found; skipping DB migrations."
@@ -251,7 +251,7 @@ run_uninstall() {
 
     local nginx_conf="/etc/nginx/sites-available/secure-ftp.conf"
     local nginx_enabled="/etc/nginx/sites-enabled/secure-ftp.conf"
-    local config_file="${app_dir}/config.php"
+    local config_file="${app_dir}/app/src/core/config.php"
     local db_host=""
     local db_name=""
     local db_user=""
@@ -436,8 +436,6 @@ else
 
     # Get installation directory
     print_step "Installation directory configuration"
-    # Get installation directory
-    print_step "Installation directory configuration"
     APP_DIR=$(prompt_input "Enter application installation path" "/var/www/html/secure-ftp")
 
     # Get domain/server name
@@ -620,14 +618,16 @@ if [ "$UPDATE_MODE" = true ]; then
     mkdir -p ${BACKUP_DIR}
     
     # Backup config.php if it exists
-    if [ -f "${APP_DIR}/config.php" ]; then
-        cp "${APP_DIR}/config.php" "${BACKUP_DIR}/config.php"
+    if [ -f "${APP_DIR}/app/src/core/config.php" ]; then
+        mkdir -p "${BACKUP_DIR}/app/src/core"
+        cp "${APP_DIR}/app/src/core/config.php" "${BACKUP_DIR}/app/src/core/config.php"
         print_message "Backed up config.php"
     fi
     
     # Backup uploads directory if it exists
-    if [ -d "${APP_DIR}/uploads" ]; then
-        cp -r "${APP_DIR}/uploads" "${BACKUP_DIR}/uploads"
+    if [ -d "${APP_DIR}/app/storage/uploads" ]; then
+        mkdir -p "${BACKUP_DIR}/app/storage"
+        cp -r "${APP_DIR}/app/storage/uploads" "${BACKUP_DIR}/app/storage/uploads"
         print_message "Backed up uploads directory"
     fi
     
@@ -641,36 +641,37 @@ print_message "Copying application files from ${SCRIPT_DIR} to ${APP_DIR}..."
 # Copy files (exclude .git, install.sh, and other non-essential files)
 # In update mode, also exclude config.php to preserve existing configuration
 if [ "$UPDATE_MODE" = true ]; then
-    rsync -av --exclude='.git' --exclude='install.sh' --exclude='*.md' --exclude='LICENSE' --exclude='config.php' --exclude='uploads' "${SCRIPT_DIR}/" "${APP_DIR}/"
+    rsync -av --exclude='.git' --exclude='/installs' --exclude='*.md' --exclude='LICENSE' --exclude='app/src/core/config.php' --exclude='app/storage/uploads' "${SCRIPT_DIR}/../" "${APP_DIR}/"
     print_message "Application files updated (config.php and uploads preserved)"
     
     # Restore config.php if backup exists
-    if [ -f "${BACKUP_DIR}/config.php" ]; then
-        cp "${BACKUP_DIR}/config.php" "${APP_DIR}/config.php"
+    if [ -f "${BACKUP_DIR}/app/src/core/config.php" ]; then
+        cp "${BACKUP_DIR}/app/src/core/config.php" "${APP_DIR}/app/src/core/config.php"
         print_message "Restored config.php from backup"
     fi
     
     # Restore uploads if backup exists and uploads doesn't exist in target
-    if [ -d "${BACKUP_DIR}/uploads" ] && [ ! -d "${APP_DIR}/uploads" ]; then
-        cp -r "${BACKUP_DIR}/uploads" "${APP_DIR}/uploads"
+    if [ -d "${BACKUP_DIR}/app/storage/uploads" ] && [ ! -d "${APP_DIR}/app/storage/uploads" ]; then
+        mkdir -p "${APP_DIR}/app/storage"
+        cp -r "${BACKUP_DIR}/app/storage/uploads" "${APP_DIR}/app/storage/uploads"
         print_message "Restored uploads directory from backup"
     fi
 else
-    rsync -av --exclude='.git' --exclude='install.sh' --exclude='*.md' --exclude='LICENSE' "${SCRIPT_DIR}/" "${APP_DIR}/"
+    rsync -av --exclude='.git' --exclude='/installs' --exclude='*.md' --exclude='LICENSE' "${SCRIPT_DIR}/../" "${APP_DIR}/"
 fi
 
-if [ ! -f "${APP_DIR}/index.php" ]; then
-    print_error "Deployment verification failed: ${APP_DIR}/index.php not found."
+if [ ! -f "${APP_DIR}/public/index.php" ]; then
+    print_error "Deployment verification failed: ${APP_DIR}/public/index.php not found."
     print_error "This usually indicates source path copy failed."
     exit 1
 fi
 
 # Create uploads directory with proper permissions (only if it doesn't exist)
-if [ ! -d "${APP_DIR}/uploads" ]; then
+if [ ! -d "${APP_DIR}/app/storage/uploads" ]; then
     print_message "Creating uploads directory..."
-    mkdir -p ${APP_DIR}/uploads
-    chown -R www-data:www-data ${APP_DIR}/uploads
-    chmod -R 755 ${APP_DIR}/uploads
+    mkdir -p ${APP_DIR}/app/storage/uploads
+    chown -R www-data:www-data ${APP_DIR}/app/storage/uploads
+    chmod -R 755 ${APP_DIR}/app/storage/uploads
 fi
 print_message "Application files installed successfully"
 
@@ -678,16 +679,16 @@ if [ "$UPDATE_MODE" = true ]; then
     run_update_db_migrations "${APP_DIR}"
 
     # Generate file encryption key if not already set
-    if [ -f "${APP_DIR}/config.php" ]; then
-        if grep -q "define('FILE_ENCRYPTION_KEY', 'CHANGE_THIS_KEY')" "${APP_DIR}/config.php"; then
+    if [ -f "${APP_DIR}/app/src/core/config.php" ]; then
+        if grep -q "define('FILE_ENCRYPTION_KEY', 'CHANGE_THIS_KEY')" "${APP_DIR}/app/src/core/config.php"; then
             FILE_ENC_KEY=$(openssl rand -hex 32)
-            sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/config.php
+            sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/app/src/core/config.php
             print_message "File encryption key generated for new encryption-at-rest feature"
-        elif ! grep -q "FILE_ENCRYPTION_KEY" "${APP_DIR}/config.php"; then
+        elif ! grep -q "FILE_ENCRYPTION_KEY" "${APP_DIR}/app/src/core/config.php"; then
             FILE_ENC_KEY=$(openssl rand -hex 32)
             # Append the define after the HASH line
             sed -i "/define('DEFAULT_HASH_ALGORITHM'/a\\
-\\n// File encryption at rest (AES-256-GCM)\\n// IMPORTANT: Generated during installation. Do NOT change after files are uploaded!\\n// 64 hex characters = 32 bytes = 256-bit key\\ndefine('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');" ${APP_DIR}/config.php
+\\n// File encryption at rest (AES-256-GCM)\\n// IMPORTANT: Generated during installation. Do NOT change after files are uploaded!\\n// 64 hex characters = 32 bytes = 256-bit key\\ndefine('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');" ${APP_DIR}/app/src/core/config.php
             print_message "File encryption key added to config.php for new encryption-at-rest feature"
         else
             print_message "File encryption key already configured"
@@ -699,44 +700,44 @@ fi
 if [ "$UPDATE_MODE" = false ]; then
     print_header "STEP 9: Database Schema Import"
     print_message "Importing database schema..."
-    if [ -f "${APP_DIR}/database.sql" ]; then
-        mysql ${DB_NAME} < ${APP_DIR}/database.sql
+    if [ -f "${APP_DIR}/database/sql/schema.sql" ]; then
+        mysql ${DB_NAME} < ${APP_DIR}/database/sql/schema.sql
         print_message "Database schema imported successfully"
     else
-        print_error "database.sql not found in ${APP_DIR}"
+        print_error "schema.sql not found in ${APP_DIR}/database/sql/"
         exit 1
     fi
 
     # Configure application
     print_header "STEP 10: Application Configuration"
     print_message "Configuring application..."
-    if [ -f "${APP_DIR}/config.php" ]; then
+    if [ -f "${APP_DIR}/app/src/core/config.php" ]; then
         # Update database configuration - escape special characters in password
         DB_PASS_ESCAPED=$(printf '%s\n' "$DB_PASS" | sed -e 's/[\/&]/\\&/g')
         
         # Update each define line, handling optional comments
-        sed -i "s|define('DB_PASS', '[^']*').*|define('DB_PASS', '${DB_PASS_ESCAPED}');|" ${APP_DIR}/config.php
-        sed -i "s|define('DB_USER', '[^']*').*|define('DB_USER', '${DB_USER}');|" ${APP_DIR}/config.php
-        sed -i "s|define('DB_NAME', '[^']*').*|define('DB_NAME', '${DB_NAME}');|" ${APP_DIR}/config.php
+        sed -i "s|define('DB_PASS', '[^']*').*|define('DB_PASS', '${DB_PASS_ESCAPED}');|" ${APP_DIR}/app/src/core/config.php
+        sed -i "s|define('DB_USER', '[^']*').*|define('DB_USER', '${DB_USER}');|" ${APP_DIR}/app/src/core/config.php
+        sed -i "s|define('DB_NAME', '[^']*').*|define('DB_NAME', '${DB_NAME}');|" ${APP_DIR}/app/src/core/config.php
         
         # Generate and set file encryption key (AES-256 = 32 bytes = 64 hex chars)
         FILE_ENC_KEY=$(openssl rand -hex 32)
-        sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/config.php
+        sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/app/src/core/config.php
         print_message "File encryption key generated and configured"
         
         # Verify the changes were made
-        if grep -q "define('DB_PASS', '${DB_PASS_ESCAPED}');" ${APP_DIR}/config.php; then
+        if grep -q "define('DB_PASS', '${DB_PASS_ESCAPED}');" ${APP_DIR}/app/src/core/config.php; then
             print_message "Application configured successfully"
         else
             print_error "Failed to update config.php with database credentials"
-            print_error "Please manually update ${APP_DIR}/config.php with the following credentials:"
+            print_error "Please manually update ${APP_DIR}/app/src/core/config.php with the following credentials:"
             echo "  DB_NAME: ${DB_NAME}"
             echo "  DB_USER: ${DB_USER}"
             echo "  DB_PASS: ${DB_PASS}"
             exit 1
         fi
     else
-        print_error "config.php not found in ${APP_DIR}"
+        print_error "config.php not found in ${APP_DIR}/app/src/core/"
         exit 1
     fi
 
@@ -757,8 +758,8 @@ if [ "$UPDATE_MODE" = false ]; then
     # Copy Nginx configuration
     print_header "STEP 12: Nginx Configuration"
     print_message "Configuring Nginx..."
-    if [ -f "${APP_DIR}/secure-ftp.conf" ]; then
-        cp "${APP_DIR}/secure-ftp.conf" "${NGINX_CONF}"
+    if [ -f "${APP_DIR}/webservers-config/secure-ftp.conf" ]; then
+        cp "${APP_DIR}/webservers-config/secure-ftp.conf" "${NGINX_CONF}"
 
         # Update domain name in nginx config
         if [ "$DOMAIN_NAME" != "_" ]; then
@@ -770,7 +771,7 @@ if [ "$UPDATE_MODE" = false ]; then
         sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" "${NGINX_CONF}"
         
         # Update application path in nginx config
-        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" "${NGINX_CONF}"
+        sed -i "s|/var/www/html/secure-ftp/public|${APP_DIR}/public|g" "${NGINX_CONF}"
         
         # Enable the site
         ln -sf "${NGINX_CONF}" "${NGINX_ENABLED}"
@@ -783,7 +784,7 @@ if [ "$UPDATE_MODE" = false ]; then
         
         print_message "Nginx configuration installed successfully"
     else
-        print_error "secure-ftp.conf not found in ${APP_DIR}"
+        print_error "secure-ftp.conf not found in ${APP_DIR}/webservers-config/"
         exit 1
     fi
 else
@@ -805,19 +806,19 @@ else
     
     # Update Nginx configuration if needed
     print_header "UPDATE: Nginx Configuration"
-    if [ -f "${APP_DIR}/secure-ftp.conf" ]; then
+    if [ -f "${APP_DIR}/webservers-config/secure-ftp.conf" ]; then
         # Detect PHP version for nginx config
         if [ -z "$PHP_VERSION" ]; then
             PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
         fi
         
-        cp "${APP_DIR}/secure-ftp.conf" "${NGINX_CONF}"
+        cp "${APP_DIR}/webservers-config/secure-ftp.conf" "${NGINX_CONF}"
         
         # Update PHP-FPM socket path in nginx config
         sed -i "s|php-fpm.sock|php${PHP_VERSION}-fpm.sock|g" "${NGINX_CONF}"
         
         # Update application path in nginx config
-        sed -i "s|/var/www/html/secure-ftp|${APP_DIR}|g" "${NGINX_CONF}"
+        sed -i "s|/var/www/html/secure-ftp/public|${APP_DIR}/public|g" "${NGINX_CONF}"
         
         # Enable the site
         ln -sf "${NGINX_CONF}" "${NGINX_ENABLED}"
@@ -845,13 +846,13 @@ fi
 print_message "Setting file permissions..."
 chown -R www-data:www-data "${APP_DIR}"
 chmod -R 755 "${APP_DIR}"
-chmod -R 755 "${APP_DIR}/uploads"
+chmod -R 755 "${APP_DIR}/app/storage/uploads"
 
 # Protect sensitive files
-if [ -f "${APP_DIR}/config.php" ]; then
-    chmod 600 "${APP_DIR}/config.php"
+if [ -f "${APP_DIR}/app/src/core/config.php" ]; then
+    chmod 600 "${APP_DIR}/app/src/core/config.php"
 fi
-chmod 600 "${APP_DIR}/database.sql" 2>/dev/null || true
+chmod 600 "${APP_DIR}/database/sql/schema.sql" 2>/dev/null || true
 print_message "File permissions configured successfully"
 
 # Restart services
@@ -990,7 +991,7 @@ Admin Password: ${ADMIN_PASS}
 APPLICATION PATHS:
 -----------------
 Application Directory: ${APP_DIR}
-Uploads Directory: ${APP_DIR}/uploads
+Uploads Directory: ${APP_DIR}/app/storage/uploads
 Nginx Config: ${NGINX_CONF}
 
 ACCESS INFORMATION:
@@ -1012,7 +1013,7 @@ NEXT STEPS:
 1. Access the application at ${ACCESS_URL}
 2. Login with admin credentials
 3. Change default passwords in admin panel
-4. Set up a reverse proxy if making publicly accessible (see REVERSE-PROXY-README.md)
+4. Set up a reverse proxy if making publicly accessible (see docs/REVERSE-PROXY-README.md)
 5. Create regular users or access codes
 6. Configure regular backups
 
