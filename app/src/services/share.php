@@ -124,7 +124,7 @@ class ShareManager {
             $fileId,
             $shareToken,
             $userId,
-            $isPublic,
+            (int)$isPublic,
             $password,
             $expiresAt,
             $maxDownloads
@@ -361,7 +361,7 @@ class ShareManager {
      * Get share by token
      */
     public function getShareByToken($token) {
-        $sql = "SELECT sf.*, f.filename, f.original_filename, f.file_size, f.mime_type, f.file_hash, f.hash_algorithm, f.encryption_iv,
+        $sql = "SELECT sf.*, f.filename, f.original_filename, f.file_size, f.mime_type, f.file_hash, f.hash_algorithm, f.encryption_iv, f.processing_status,
                        u.username as shared_by_username
                 FROM shared_files sf
                 JOIN files f ON sf.file_id = f.id
@@ -576,7 +576,7 @@ class ShareManager {
         
         if (isset($data['is_public'])) {
             $updates[] = "is_public = ?";
-            $params[] = (bool)$data['is_public'];
+            $params[] = (int)(bool)$data['is_public'];
         }
         
         if (isset($data['password'])) {
@@ -600,7 +600,7 @@ class ShareManager {
         
         if (isset($data['is_active'])) {
             $updates[] = "is_active = ?";
-            $params[] = (bool)$data['is_active'];
+            $params[] = (int)(bool)$data['is_active'];
         }
         
         if (empty($updates)) {

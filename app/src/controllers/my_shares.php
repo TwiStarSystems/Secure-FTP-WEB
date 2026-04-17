@@ -107,6 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
+        // Toggle share visibility (Public / Private)
+        elseif ($action === 'toggle_visibility' && isset($_POST['share_id'])) {
+            $newPublic = isset($_POST['is_public']) && $_POST['is_public'] === '1';
+            $result = $shareManager->updateShare($_POST['share_id'], $currentUser['id'], ['is_public' => $newPublic]);
+            if ($result['success']) {
+                $message = ['type' => 'success', 'message' => $newPublic ? 'Share set to Public.' : 'Share set to Private.'];
+            } else {
+                $message = ['type' => 'error', 'message' => $result['error']];
+            }
+        }
+        
         // Toggle share status
         elseif ($action === 'toggle_share' && isset($_POST['share_id'])) {
             $isActive = isset($_POST['is_active']) ? (bool)$_POST['is_active'] : false;
@@ -327,31 +338,42 @@ $csrfToken = $auth->generateCSRFToken();
                                             <button type="button" onclick="showExpiryModal(<?php echo $share['file_id']; ?>, 'file', '<?php echo $fileExpiry ? date('Y-m-d\TH:i', strtotime($fileExpiry)) : ''; ?>')" class="btn btn-mini" title="Edit file expiry">✏️</button>
                                         </div>
                                     </td>
-                                    <td class="actions">
+                                    <td>
                                         <div class="actions-inline">
                                             <?php if (empty($share['recipient_email'])): ?>
-                                                <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small" title="Copy link">
-                                                    📋
-                                                </button>
-                                                <a href="shared.php?token=<?php echo htmlspecialchars($share['share_token']); ?>" class="btn btn-small" title="View" target="_blank">
-                                                    👁️
-                                                </a>
+                                                <button type="button" onclick="copyToClipboard('<?php echo $shareManager->getShareUrl($share['share_token']); ?>')" class="btn btn-small">Copy</button>
+                                                <a href="shared.php?token=<?php echo htmlspecialchars($share['share_token']); ?>" class="btn btn-small" target="_blank">View</a>
+                                                <?php if (!$share['is_public']): ?>
+                                                    <form method="POST" style="display: inline;">
+                                                        <input type="hidden" name="action" value="toggle_visibility">
+                                                        <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
+                                                        <input type="hidden" name="is_public" value="1">
+                                                        <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                        <button type="submit" class="btn btn-small">Make Public</button>
+                                                    </form>
+                                                <?php else: ?>
+                                                    <form method="POST" style="display: inline;">
+                                                        <input type="hidden" name="action" value="toggle_visibility">
+                                                        <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
+                                                        <input type="hidden" name="is_public" value="0">
+                                                        <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                                        <button type="submit" class="btn btn-small btn-warning">Make Private</button>
+                                                    </form>
+                                                <?php endif; ?>
                                             <?php else: ?>
-                                                <button type="button" class="btn btn-small" title="Recipient-restricted links are one-time and can only be copied when created." disabled>
-                                                    📧
-                                                </button>
+                                                <button type="button" class="btn btn-small" disabled title="Recipient-restricted links can only be copied at creation">Recipient</button>
                                                 <form method="POST" style="display: inline;">
                                                     <input type="hidden" name="action" value="regenerate_recipient_link">
                                                     <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
                                                     <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                                    <button type="submit" class="btn btn-small" title="Regenerate recipient one-time URL">🔁</button>
+                                                    <button type="submit" class="btn btn-small">Regen Link</button>
                                                 </form>
                                             <?php endif; ?>
                                             <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this share link?')">
                                                 <input type="hidden" name="action" value="delete_share">
                                                 <input type="hidden" name="share_id" value="<?php echo $share['id']; ?>">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                                <button type="submit" class="btn btn-small btn-danger" title="Delete">🗑️</button>
+                                                <button type="submit" class="btn btn-small btn-danger">Delete</button>
                                             </form>
                                         </div>
                                     </td>

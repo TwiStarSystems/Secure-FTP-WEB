@@ -1488,15 +1488,16 @@ body {
   width: 100%;
 }
 
-.shares-table td.actions {
-  display: table-cell;
-  white-space: nowrap;
+.shares-table th,
+.shares-table td {
+  vertical-align: middle;
 }
 
 .shares-table .actions-inline {
   display: flex;
   gap: var(--spacing-sm);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .shares-table .inactive-row {

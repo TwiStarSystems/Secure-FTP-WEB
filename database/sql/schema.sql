@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS files (
     upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     download_count INT DEFAULT 0,
     file_expiry_date DATETIME NULL,
+    processing_status ENUM('pending','processing','ready','failed') DEFAULT 'ready',
+    processing_error TEXT NULL,
     FOREIGN KEY (uploaded_by_user) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (uploaded_by_code) REFERENCES access_codes(id) ON DELETE CASCADE
 );

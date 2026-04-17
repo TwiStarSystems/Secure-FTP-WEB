@@ -91,28 +91,8 @@ class FileManager {
         if (!move_uploaded_file($file['tmp_name'], $filepath)) {
             return ['success' => false, 'error' => 'Failed to save uploaded file.'];
         }
-        
-        // Calculate file hash
-        $fileHash = hash_file($hashAlgorithm, $filepath);
 
-        // Duplicate file detection — same hash within the same uploader's file set
-        $duplicate = $this->findDuplicate(
-            $fileHash, $hashAlgorithm,
-            $user ? $user['id'] : null,
-            $accessCode ? $accessCode['id'] : null
-        );
-        if ($duplicate) {
-            unlink($filepath);
-            return [
-                'success'           => false,
-                'duplicate'         => true,
-                'error'             => 'This file is identical to an existing upload: "' . $duplicate['original_filename'] . '".',
-                'existing_file_id'  => (int)$duplicate['id'],
-                'existing_filename' => $duplicate['original_filename']
-            ];
-        }
-
-        // Get mime type
+        // Get mime type (fast — stays synchronous)
         $mimeType = mime_content_type($filepath);
 
         // Validate MIME type against admin-configured allowlist
@@ -122,29 +102,10 @@ class FileManager {
             return ['success' => false, 'error' => 'File type "' . $mimeType . '" is not permitted on this server.'];
         }
 
-        // Optional ClamAV virus scan
-        if ($this->appSettings->isVirusScanEnabled()) {
-            $scanResult = $this->runClamAVScan($filepath);
-            if ($scanResult !== null && !$scanResult['clean']) {
-                unlink($filepath);
-                return ['success' => false, 'error' => 'File rejected: ' . $scanResult['message']];
-            }
-        }
-
-        // Encrypt file at rest (AES-256-GCM)
-        $encryptionIv = null;
-        if (self::isEncryptionEnabled()) {
-            $encResult = self::encryptFile($filepath);
-            if (!$encResult['success']) {
-                unlink($filepath);
-                return ['success' => false, 'error' => 'Encryption failed: ' . $encResult['error']];
-            }
-            $encryptionIv = $encResult['iv'];
-        }
-
-        // Save to database
-        $sql = "INSERT INTO files (filename, original_filename, file_size, file_hash, hash_algorithm, encryption_iv, mime_type, uploaded_by_user, uploaded_by_code) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        // Save to database with processing_status = 'pending'
+        // Hashing, duplicate detection, virus scan, and encryption happen in the background.
+        $sql = "INSERT INTO files (filename, original_filename, file_size, hash_algorithm, mime_type, uploaded_by_user, uploaded_by_code, processing_status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
         
         $userId = $user ? $user['id'] : null;
         $codeId = $accessCode ? $accessCode['id'] : null;
@@ -153,16 +114,16 @@ class FileManager {
             $filename,
             $file['name'],
             $file['size'],
-            $fileHash,
             $hashAlgorithm,
-            $encryptionIv,
             $mimeType,
             $userId,
             $codeId
         ]);
         
         if ($result) {
-            // Update quota
+            $newFileId = $this->db->lastInsertId();
+
+            // Update quota immediately
             if ($user) {
                 $sql = "UPDATE users SET used_quota = used_quota + ? WHERE id = ?";
                 $this->db->query($sql, [$file['size'], $user['id']]);
@@ -170,20 +131,44 @@ class FileManager {
                 $sql = "UPDATE access_codes SET used_quota = used_quota + ? WHERE id = ?";
                 $this->db->query($sql, [$file['size'], $accessCode['id']]);
             }
+
+            // Spawn background worker for hashing + encryption
+            $this->spawnProcessor($newFileId, $hashAlgorithm);
             
             return [
                 'success' => true,
-                'file_id' => $this->db->lastInsertId(),
+                'file_id' => $newFileId,
                 'filename' => $filename,
                 'original_filename' => $file['name'],
-                'file_hash' => $fileHash,
-                'hash_algorithm' => $hashAlgorithm
+                'processing' => true
             ];
         }
         
         // Clean up file if database insert failed
         unlink($filepath);
         return ['success' => false, 'error' => 'Failed to save file information.'];
+    }
+
+    /**
+     * Spawn the background file processor (hashing, dedup, encryption).
+     */
+    private function spawnProcessor($fileId, $hashAlgorithm) {
+        $script = APP_DIR . '/src/services/process_file.php';
+        $phpBin = PHP_BINARY ?: 'php';
+        $cmd = escapeshellarg($phpBin) . ' '
+             . escapeshellarg($script) . ' '
+             . escapeshellarg((string)$fileId) . ' '
+             . escapeshellarg($hashAlgorithm)
+             . ' > /dev/null 2>&1 &';
+        exec($cmd);
+    }
+
+    /**
+     * Get the processing status of a file.
+     */
+    public function getFileProcessingStatus($fileId) {
+        $sql = "SELECT id, processing_status, processing_error, file_hash, hash_algorithm FROM files WHERE id = ?";
+        return $this->db->fetch($sql, [$fileId]);
     }
     
     // Get files for current user/access code
@@ -238,6 +223,14 @@ class FileManager {
         
         if (!$file) {
             return ['success' => false, 'error' => 'File not found.'];
+        }
+
+        // Block downloads for files still being processed
+        if (isset($file['processing_status']) && in_array($file['processing_status'], ['pending', 'processing'], true)) {
+            return ['success' => false, 'error' => 'File is still being processed. Please try again shortly.'];
+        }
+        if (isset($file['processing_status']) && $file['processing_status'] === 'failed') {
+            return ['success' => false, 'error' => 'File processing failed and is not available for download.'];
         }
         
         // Check permissions using RBAC

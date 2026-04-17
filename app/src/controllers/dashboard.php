@@ -68,6 +68,27 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
+// Handle file processing status check (AJAX polling)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'processing_status' && isset($_GET['file_id'])) {
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+        header('Content-Type: application/json; charset=utf-8');
+        $statusFileId = (int)$_GET['file_id'];
+        $status = $fileManager->getFileProcessingStatus($statusFileId);
+        if ($status) {
+            echo json_encode([
+                'file_id'           => (int)$status['id'],
+                'processing_status' => $status['processing_status'],
+                'processing_error'  => $status['processing_error'],
+                'file_hash'         => $status['file_hash'],
+                'hash_algorithm'    => $status['hash_algorithm']
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        } else {
+            echo json_encode(['error' => 'File not found.']);
+        }
+        exit;
+    }
+}
+
 // Handle file upload
 $uploadMessage = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'upload') {
@@ -79,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $result = $fileManager->uploadFile($_FILES['file'], $hashAlgorithm);
         
         if ($result['success']) {
-            $uploadMessage = ['type' => 'success', 'message' => 'File uploaded successfully!', 'data' => $result];
+            $uploadMessage = ['type' => 'success', 'message' => 'File uploaded! Processing hash & encryption in background…', 'data' => $result];
         } else {
             $uploadMessage = ['type' => 'error', 'message' => $result['error']];
         }
@@ -366,11 +387,17 @@ if (
             <div class="alert alert-<?php echo $uploadMessage['type'] === 'success' ? 'success' : 'error'; ?>">
                 <?php echo htmlspecialchars($uploadMessage['message']); ?>
                 <?php if ($uploadMessage['type'] === 'success' && isset($uploadMessage['data'])): ?>
-                    <div class="hash-info">
-                        <strong>File Hash (<?php echo strtoupper($uploadMessage['data']['hash_algorithm']); ?>):</strong><br>
-                        <span id="upload-hash"><?php echo htmlspecialchars($uploadMessage['data']['file_hash']); ?></span>
-                        <button type="button" onclick="copyHash('upload-hash')" class="btn btn-small" style="margin-left: 10px;">Copy</button>
-                    </div>
+                    <?php if (!empty($uploadMessage['data']['processing'])): ?>
+                        <div class="hash-info" id="processing-info-<?php echo (int)$uploadMessage['data']['file_id']; ?>">
+                            <em>Hashing &amp; encryption in progress…</em>
+                        </div>
+                    <?php elseif (!empty($uploadMessage['data']['file_hash'])): ?>
+                        <div class="hash-info">
+                            <strong>File Hash (<?php echo strtoupper($uploadMessage['data']['hash_algorithm']); ?>):</strong><br>
+                            <span id="upload-hash"><?php echo htmlspecialchars($uploadMessage['data']['file_hash']); ?></span>
+                            <button type="button" onclick="copyHash('upload-hash')" class="btn btn-small" style="margin-left: 10px;">Copy</button>
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
                 <?php if (!empty($uploadMessage['duplicate']) && isset($uploadMessage['existing_file_id'])): ?>
                     <div style="margin-top:0.5rem;">
@@ -451,21 +478,35 @@ if (
                         </thead>
                         <tbody>
                             <?php foreach ($files as $file): ?>
-                                <tr>
+                                <?php $isProcessing = isset($file['processing_status']) && in_array($file['processing_status'], ['pending', 'processing']); ?>
+                                <?php $isFailed = isset($file['processing_status']) && $file['processing_status'] === 'failed'; ?>
+                                <tr data-file-id="<?php echo (int)$file['id']; ?>" data-processing="<?php echo $isProcessing ? '1' : '0'; ?>">
                                     <td><?php echo htmlspecialchars($file['original_filename']); ?></td>
                                     <?php if ($isAdmin): ?>
                                         <td><?php echo isset($file['uploaded_by_username']) ? htmlspecialchars($file['uploaded_by_username']) : 'N/A'; ?></td>
                                     <?php endif; ?>
                                     <td><?php echo $fileManager->formatBytes($file['file_size']); ?></td>
-                                    <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash']); ?>">
-                                        <span class="hash-short"><small class="text-muted"><?php echo strtoupper($file['hash_algorithm'] ?? DEFAULT_HASH_ALGORITHM); ?>:</small> <?php echo substr($file['file_hash'], 0, 16); ?>...</span>
-                                        <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($file['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
+                                    <td class="file-hash" title="<?php echo htmlspecialchars($file['file_hash'] ?? ''); ?>">
+                                        <?php if ($isProcessing): ?>
+                                            <span class="processing-badge" style="color:var(--color-accent,#00bcd4);">⏳ Processing…</span>
+                                        <?php elseif ($isFailed): ?>
+                                            <span class="processing-badge" style="color:var(--color-wine-red,#c00);" title="<?php echo htmlspecialchars($file['processing_error'] ?? ''); ?>">⚠ Failed</span>
+                                        <?php else: ?>
+                                            <span class="hash-short"><small class="text-muted"><?php echo strtoupper($file['hash_algorithm'] ?? DEFAULT_HASH_ALGORITHM); ?>:</small> <?php echo substr($file['file_hash'], 0, 16); ?>...</span>
+                                            <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($file['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
+                                        <?php endif; ?>
                                     </td>
                                     <td><?php echo date('Y-m-d H:i', strtotime($file['upload_date'])); ?></td>
                                     <td><?php echo $file['download_count']; ?></td>
                                     <td class="actions">
-                                        <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
-                                        <?php if ($currentUser && RBAC::canShareFile($file, $currentUser)): ?>
+                                        <?php if ($isProcessing): ?>
+                                            <span class="btn btn-small" style="opacity:0.5; cursor:default;" title="File is still processing">Download</span>
+                                        <?php elseif ($isFailed): ?>
+                                            <span class="btn btn-small" style="opacity:0.5; cursor:default;" title="<?php echo htmlspecialchars($file['processing_error'] ?? 'Processing failed'); ?>">Unavailable</span>
+                                        <?php else: ?>
+                                            <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
+                                        <?php endif; ?>
+                                        <?php if (!$isProcessing && !$isFailed && $currentUser && RBAC::canShareFile($file, $currentUser)): ?>
                                             <?php if (isset($fileShares[$file['id']]) && $fileShares[$file['id']]): ?>
                                                 <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove all share links for this file?')">
                                                     <input type="hidden" name="action" value="unshare">
@@ -636,7 +677,11 @@ if (
                     if (e.lengthComputable) {
                         var pct = Math.round(e.loaded / e.total * 100);
                         fill.style.width = pct + '%';
-                        label.textContent = 'Uploading\u2026 ' + pct + '%  (' + fmtBytes(e.loaded) + ' / ' + fmtBytes(e.total) + ')';
+                        if (pct >= 100) {
+                            label.textContent = 'Saving file\u2026';
+                        } else {
+                            label.textContent = 'Uploading\u2026 ' + pct + '%  (' + fmtBytes(e.loaded) + ' / ' + fmtBytes(e.total) + ')';
+                        }
                     }
                 });
 
@@ -687,7 +732,9 @@ if (
 
                 var html = esc(res.message || '');
 
-                if (res.type === 'success' && res.data) {
+                if (res.type === 'success' && res.data && res.data.processing) {
+                    html += '<div class="hash-info" id="xhr-processing-info"><em>\u23F3 Hashing &amp; encryption in progress\u2026</em></div>';
+                } else if (res.type === 'success' && res.data && res.data.file_hash) {
                     html += '<div class="hash-info"><strong>File Hash (' + esc(res.data.hash_algorithm.toUpperCase()) + '):</strong><br>'
                         + '<span id="xhr-upload-hash">' + esc(res.data.file_hash) + '</span>'
                         + '<button type="button" onclick="copyHash(\'xhr-upload-hash\')" class="btn btn-small" style="margin-left:10px">Copy</button></div>';
@@ -715,7 +762,9 @@ if (
 
                 div.scrollIntoView({behavior:'smooth', block:'nearest'});
 
-                if (res.type === 'success') {
+                if (res.type === 'success' && res.data && res.data.processing && res.data.file_id) {
+                    pollProcessingStatus(res.data.file_id);
+                } else if (res.type === 'success') {
                     setTimeout(function() { location.reload(); }, 1800);
                 }
             }
@@ -730,6 +779,69 @@ if (
             function esc(s) {
                 return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
             }
+
+            /**
+             * Poll the server for a file's processing status.
+             * When finished (ready or failed), update the alert and reload the file table.
+             */
+            function pollProcessingStatus(fileId) {
+                var interval = setInterval(function() {
+                    var req = new XMLHttpRequest();
+                    req.open('GET', 'index.php?action=processing_status&file_id=' + encodeURIComponent(fileId));
+                    req.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    req.onload = function() {
+                        if (req.status !== 200) return;
+                        try {
+                            var data = JSON.parse(req.responseText);
+                        } catch(e) { return; }
+
+                        if (data.processing_status === 'ready') {
+                            clearInterval(interval);
+                            // Update the alert with the hash
+                            var info = document.getElementById('xhr-processing-info');
+                            if (info) {
+                                info.innerHTML = '<strong>File Hash (' + esc((data.hash_algorithm || '').toUpperCase()) + '):</strong><br>'
+                                    + '<span id="xhr-upload-hash">' + esc(data.file_hash || '') + '</span>'
+                                    + '<button type="button" onclick="copyHash(\'xhr-upload-hash\')" class="btn btn-small" style="margin-left:10px">Copy</button>';
+                            }
+                            // Refresh table rows
+                            setTimeout(function() { location.reload(); }, 1200);
+                        } else if (data.processing_status === 'failed') {
+                            clearInterval(interval);
+                            var info = document.getElementById('xhr-processing-info');
+                            if (info) {
+                                info.innerHTML = '<span style="color:var(--color-wine-red,#c00);">\u26A0 ' + esc(data.processing_error || 'Processing failed.') + '</span>';
+                            }
+                            setTimeout(function() { location.reload(); }, 2500);
+                        }
+                    };
+                    req.send();
+                }, 2000);
+            }
+
+            // Auto-poll for any files currently shown as processing in the table
+            (function() {
+                var rows = document.querySelectorAll('tr[data-processing="1"]');
+                rows.forEach(function(row) {
+                    var fileId = row.getAttribute('data-file-id');
+                    if (fileId) {
+                        var interval = setInterval(function() {
+                            var req = new XMLHttpRequest();
+                            req.open('GET', 'index.php?action=processing_status&file_id=' + encodeURIComponent(fileId));
+                            req.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                            req.onload = function() {
+                                if (req.status !== 200) return;
+                                try { var data = JSON.parse(req.responseText); } catch(e) { return; }
+                                if (data.processing_status === 'ready' || data.processing_status === 'failed') {
+                                    clearInterval(interval);
+                                    location.reload();
+                                }
+                            };
+                            req.send();
+                        }, 3000);
+                    }
+                });
+            }());
         }());
     </script>
     
