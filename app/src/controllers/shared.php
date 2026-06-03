@@ -282,14 +282,6 @@ if (isset($_GET['download']) && $_GET['download'] === '1') {
         die('Invalid filename.');
     }
 
-    // Block download if file is still being processed
-    if (isset($share['processing_status']) && in_array($share['processing_status'], ['pending', 'processing'], true)) {
-        die('This file is still being processed. Please try again shortly.');
-    }
-    if (isset($share['processing_status']) && $share['processing_status'] === 'failed') {
-        die('This file is not available for download.');
-    }
-    
     $filepath = UPLOAD_DIR . $share['filename'];
     
     if (!file_exists($filepath) || !is_file($filepath)) {

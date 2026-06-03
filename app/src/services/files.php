@@ -154,13 +154,42 @@ class FileManager {
      */
     private function spawnProcessor($fileId, $hashAlgorithm) {
         $script = APP_DIR . '/src/services/process_file.php';
-        $phpBin = PHP_BINARY ?: 'php';
+        $phpBin = self::findPhpCliBinary();
         $cmd = escapeshellarg($phpBin) . ' '
              . escapeshellarg($script) . ' '
              . escapeshellarg((string)$fileId) . ' '
              . escapeshellarg($hashAlgorithm)
              . ' > /dev/null 2>&1 &';
         exec($cmd);
+    }
+
+    /**
+     * Locate the PHP CLI binary.  PHP_BINARY points to php-fpm when running
+     * under FPM, which cannot execute CLI scripts.  Walk a short list of
+     * well-known paths and fall back to the bare 'php' command.
+     */
+    private static function findPhpCliBinary() {
+        // If we are already in CLI, PHP_BINARY is fine.
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
+            return PHP_BINARY ?: 'php';
+        }
+
+        // Common CLI binary locations (version-specific first)
+        $majorMinor = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+        $candidates = [
+            '/usr/bin/php' . $majorMinor,       // e.g. /usr/bin/php8.4
+            '/usr/bin/php' . PHP_MAJOR_VERSION,  // e.g. /usr/bin/php8
+            '/usr/bin/php',
+            '/usr/local/bin/php',
+        ];
+
+        foreach ($candidates as $path) {
+            if (is_executable($path)) {
+                return $path;
+            }
+        }
+
+        return 'php'; // rely on PATH
     }
 
     /**
@@ -177,18 +206,9 @@ class FileManager {
         $accessCode = $this->auth->getCurrentAccessCode();
         
         if ($user) {
-            // Admin sees all files
-            if (RBAC::isAdmin()) {
-                $sql = "SELECT f.*, u.username as uploaded_by_username 
-                        FROM files f 
-                        LEFT JOIN users u ON f.uploaded_by_user = u.id 
-                        ORDER BY f.upload_date DESC";
-                return $this->db->fetchAll($sql);
-            } else {
-                // Regular user sees their own files
-                $sql = "SELECT * FROM files WHERE uploaded_by_user = ? ORDER BY upload_date DESC";
-                return $this->db->fetchAll($sql, [$user['id']]);
-            }
+            // All users (including admin) see only their own files in "My Files"
+            $sql = "SELECT * FROM files WHERE uploaded_by_user = ? ORDER BY upload_date DESC";
+            return $this->db->fetchAll($sql, [$user['id']]);
         } elseif ($accessCode) {
             // Access code sees files uploaded with that code
             $sql = "SELECT * FROM files WHERE uploaded_by_code = ? ORDER BY upload_date DESC";
@@ -210,6 +230,33 @@ class FileManager {
                 ORDER BY f.upload_date DESC";
         return $this->db->fetchAll($sql);
     }
+
+    /**
+     * Get all files with share status info (admin only).
+     * Returns each file with active_share_count and share_types summary.
+     */
+    public function getAllFilesWithShareStatus() {
+        if (!RBAC::isAdmin()) {
+            return [];
+        }
+
+        $sql = "SELECT f.*, u.username as uploaded_by_username,
+                       COUNT(DISTINCT sf.id) AS total_shares,
+                       SUM(CASE WHEN sf.is_active = TRUE
+                                 AND (sf.expires_at IS NULL OR sf.expires_at > NOW())
+                                 AND (sf.max_downloads IS NULL OR sf.download_count < sf.max_downloads)
+                            THEN 1 ELSE 0 END) AS active_shares,
+                       SUM(CASE WHEN sf.is_public = TRUE AND sf.is_active = TRUE
+                                 AND (sf.expires_at IS NULL OR sf.expires_at > NOW())
+                                 AND (sf.max_downloads IS NULL OR sf.download_count < sf.max_downloads)
+                            THEN 1 ELSE 0 END) AS public_shares
+                FROM files f
+                LEFT JOIN users u ON f.uploaded_by_user = u.id
+                LEFT JOIN shared_files sf ON sf.file_id = f.id
+                GROUP BY f.id
+                ORDER BY f.upload_date DESC";
+        return $this->db->fetchAll($sql);
+    }
     
     // Get file by ID
     public function getFile($fileId) {
@@ -225,14 +272,6 @@ class FileManager {
             return ['success' => false, 'error' => 'File not found.'];
         }
 
-        // Block downloads for files still being processed
-        if (isset($file['processing_status']) && in_array($file['processing_status'], ['pending', 'processing'], true)) {
-            return ['success' => false, 'error' => 'File is still being processed. Please try again shortly.'];
-        }
-        if (isset($file['processing_status']) && $file['processing_status'] === 'failed') {
-            return ['success' => false, 'error' => 'File processing failed and is not available for download.'];
-        }
-        
         // Check permissions using RBAC
         $user = $this->auth->getCurrentUser();
         $accessCode = $this->auth->getCurrentAccessCode();

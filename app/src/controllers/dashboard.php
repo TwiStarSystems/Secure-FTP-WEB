@@ -323,6 +323,12 @@ $isAdmin = RBAC::isAdmin();
 // Get files
 $files = $fileManager->getFiles();
 
+// Admin: get all files with share status for the overview section
+$allFilesWithShares = [];
+if ($isAdmin) {
+    $allFilesWithShares = $fileManager->getAllFilesWithShareStatus();
+}
+
 // Get active shares for each file to show correct button
 $fileShares = [];
 if ($currentUser) {
@@ -499,14 +505,8 @@ if (
                                     <td><?php echo date('Y-m-d H:i', strtotime($file['upload_date'])); ?></td>
                                     <td><?php echo $file['download_count']; ?></td>
                                     <td class="actions">
-                                        <?php if ($isProcessing): ?>
-                                            <span class="btn btn-small" style="opacity:0.5; cursor:default;" title="File is still processing">Download</span>
-                                        <?php elseif ($isFailed): ?>
-                                            <span class="btn btn-small" style="opacity:0.5; cursor:default;" title="<?php echo htmlspecialchars($file['processing_error'] ?? 'Processing failed'); ?>">Unavailable</span>
-                                        <?php else: ?>
-                                            <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
-                                        <?php endif; ?>
-                                        <?php if (!$isProcessing && !$isFailed && $currentUser && RBAC::canShareFile($file, $currentUser)): ?>
+                                        <a href="download.php?id=<?php echo $file['id']; ?>" class="btn btn-small">Download</a>
+                                        <?php if ($currentUser && RBAC::canShareFile($file, $currentUser)): ?>
                                             <?php if (isset($fileShares[$file['id']]) && $fileShares[$file['id']]): ?>
                                                 <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove all share links for this file?')">
                                                     <input type="hidden" name="action" value="unshare">
@@ -545,6 +545,86 @@ if (
                 </div>
             <?php endif; ?>
         </div>
+
+        <?php if ($isAdmin): ?>
+        <div class="card">
+            <h2>All Uploaded Files</h2>
+            <?php if (empty($allFilesWithShares)): ?>
+                <p>No files uploaded yet.</p>
+            <?php else: ?>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Owner</th>
+                            <th>Size</th>
+                            <th>Hash</th>
+                            <th>Uploaded</th>
+                            <th>Downloads</th>
+                            <th>Share Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($allFilesWithShares as $af): ?>
+                            <?php $afProcessing = isset($af['processing_status']) && in_array($af['processing_status'], ['pending', 'processing']); ?>
+                            <?php $afFailed = isset($af['processing_status']) && $af['processing_status'] === 'failed'; ?>
+                            <tr data-file-id="<?php echo (int)$af['id']; ?>" data-processing="<?php echo $afProcessing ? '1' : '0'; ?>">
+                                <td><?php echo htmlspecialchars($af['original_filename']); ?></td>
+                                <td><?php echo isset($af['uploaded_by_username']) ? htmlspecialchars($af['uploaded_by_username']) : 'Access Code'; ?></td>
+                                <td><?php echo $fileManager->formatBytes($af['file_size']); ?></td>
+                                <td class="file-hash" title="<?php echo htmlspecialchars($af['file_hash'] ?? ''); ?>">
+                                    <?php if ($afProcessing): ?>
+                                        <span class="processing-badge" style="color:var(--color-accent,#00bcd4);">⏳ Processing…</span>
+                                    <?php elseif ($afFailed): ?>
+                                        <span class="processing-badge" style="color:var(--color-wine-red,#c00);" title="<?php echo htmlspecialchars($af['processing_error'] ?? ''); ?>">⚠ Failed</span>
+                                    <?php elseif ($af['file_hash']): ?>
+                                        <span class="hash-short"><small class="text-muted"><?php echo strtoupper($af['hash_algorithm'] ?? DEFAULT_HASH_ALGORITHM); ?>:</small> <?php echo substr($af['file_hash'], 0, 16); ?>…</span>
+                                        <button type="button" onclick="copyToClipboard('<?php echo htmlspecialchars($af['file_hash'], ENT_QUOTES); ?>')" class="btn btn-mini" title="Copy full hash">📋</button>
+                                    <?php else: ?>
+                                        <span class="text-muted">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo date('Y-m-d H:i', strtotime($af['upload_date'])); ?></td>
+                                <td><?php echo $af['download_count']; ?></td>
+                                <td>
+                                    <?php
+                                        $activeShares = (int)$af['active_shares'];
+                                        $publicShares = (int)$af['public_shares'];
+                                        $privateShares = $activeShares - $publicShares;
+                                    ?>
+                                    <?php if ($activeShares === 0): ?>
+                                        <span class="text-muted">Not shared</span>
+                                    <?php else: ?>
+                                        <?php if ($publicShares > 0): ?>
+                                            <span style="color:var(--color-accent,#00bcd4);">🌐 <?php echo $publicShares; ?> public</span>
+                                        <?php endif; ?>
+                                        <?php if ($privateShares > 0): ?>
+                                            <span style="color:var(--color-sparkle-purple,#9600e1);">🔒 <?php echo $privateShares; ?> private</span>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="actions">
+                                    <a href="download.php?id=<?php echo $af['id']; ?>" class="btn btn-small">Download</a>
+                                    <?php if (RBAC::canDeleteFile($af, $currentUser)): ?>
+                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this file?')">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="file_id" value="<?php echo $af['id']; ?>">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
     </div>
 
     <div id="emailShareModal" class="modal" style="display: none;">

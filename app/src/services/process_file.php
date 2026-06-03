@@ -24,7 +24,8 @@ $fileId        = (int) $argv[1];
 $hashAlgorithm = $argv[2];
 
 // Bootstrap the application
-define('APP_BASE', dirname(__DIR__, 2));
+// __DIR__ = app/src/services → 3 levels up = project root
+define('APP_BASE', dirname(__DIR__, 3));
 define('APP_DIR', APP_BASE . '/app');
 require_once APP_DIR . '/src/core/config.php';
 require_once APP_DIR . '/src/core/db.php';
