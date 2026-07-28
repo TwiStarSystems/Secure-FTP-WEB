@@ -20,7 +20,7 @@
 | Security Monitoring | 9 | 2 | 82% |
 | Operations & Deployment | 5 | 2 | 71% |
 | UI/UX Polish | 5 | 2 | 71% |
-| Bugs | 0 | 6 | 0% |
+| Bugs | 3 | 3 | 50% |
 
 ---
 
@@ -202,9 +202,11 @@
 
 # Bugs #
 
-- [ ] **MFA disable function disables both methods** — `disableTotpForUser()` in `mfa.php` sets both `totp_enabled` AND `email_enabled` to `FALSE`; `disableEmailMfaForUser()` does the same in reverse. Disabling one MFA method incorrectly disables the other. Each function should only update its own column.
-- [ ] **Session timeout doesn't extend on active use** — `auth.php` checks `$_SESSION['last_activity']` against the timeout but never updates it on subsequent requests. Users are logged out after the initial timeout period even during continuous active use.
-- [ ] **Recipient token consumed before file existence check** — in `shared.php`, the one-time recipient token is marked as consumed before verifying the file exists on disk. If the file is missing, the token is permanently wasted and the recipient can never download.
-- [ ] **Email share rollback too aggressive** — when emailing share links to multiple recipients from `index.php`, if any single email fails the rollback deletes ALL shares created in that batch instead of only the one that failed.
-- [ ] **Decryption failure returns blank response** — in `download.php` and `shared.php`, HTTP headers are sent before decryption begins. If decryption fails mid-stream, the response body is empty or truncated with no error visible to the user.
-- [ ] **GET-based logout vulnerable to CSRF** — `logout.php` accepts GET requests with no CSRF token verification. A malicious site can force a user logout via an embedded image tag or link.
+> **Re-audited 2026-07-28** against current `main` (post async-upload refactor). Three previously-listed bugs below were found already fixed in code and are marked done; the rest are confirmed still present. See GitHub issues #3-#20 for the full current bug/logic-problem list from the 2026-07-28 review (upload/processing pipeline, session/RBAC, MFA, rate-limiting races, etc.) — this section only tracks the pre-existing short list, not a duplicate of those issues.
+
+- [X] ~~MFA disable function disables both methods~~ — Verified fixed: `disableTotpForUser()` only updates `totp_enabled`/`totp_secret`, `disableEmailForUser()` only updates `email_enabled`.
+- [ ] **Session timeout doesn't extend on active use** — `auth.php`'s `isLoggedIn()` checks `$_SESSION['login_time']` against `SESSION_TIMEOUT` but never refreshes it on subsequent requests, so it behaves as an absolute 1-hour session lifetime rather than an idle timeout. Tracked as GitHub issue #18.
+- [X] ~~Recipient token consumed before file existence check~~ — Verified fixed: `shared.php` now checks `file_exists()`/`is_file()` and `die()`s before the recipient-token consumption step.
+- [X] ~~Email share rollback too aggressive~~ — Verified fixed: `dashboard.php`'s `email_share` handler rolls back only the specific recipient's `share_id` that failed, inside the per-recipient loop.
+- [ ] **Decryption failure returns blank response** — in `download.php` and `shared.php`, HTTP headers are sent before decryption begins. If decryption fails mid-stream, the response body is empty or truncated with no error visible to the user. Tracked as GitHub issue #19.
+- [ ] **GET-based logout vulnerable to CSRF** — `logout.php` accepts GET requests with no CSRF token verification. A malicious site can force a user logout via an embedded image tag or link. Tracked as GitHub issue #20.

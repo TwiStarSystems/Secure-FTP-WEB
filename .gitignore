@@ -40,3 +40,6 @@ installs/installation_credentials.txt
 
 # Ignore OS generated files
 Thumbs.db
+
+# Ignore servers.md
+servers.md

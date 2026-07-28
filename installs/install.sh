@@ -238,6 +238,13 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 
 -- Add encryption_iv column for AES-256-GCM file encryption at rest
 ALTER TABLE files ADD COLUMN IF NOT EXISTS encryption_iv VARCHAR(24) NULL AFTER hash_algorithm;
+
+-- Add processing_status/processing_error columns for the async upload pipeline
+-- (hashing, duplicate detection, virus scan, encryption run in the background
+-- via process_file.php). Existing rows default to 'ready' since any file already
+-- present before this migration was processed synchronously and is fully usable.
+ALTER TABLE files ADD COLUMN IF NOT EXISTS processing_status ENUM('pending','processing','ready','failed') DEFAULT 'ready' AFTER file_expiry_date;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS processing_error TEXT NULL AFTER processing_status;
 SQL
 
     print_message "Database migrations completed."
