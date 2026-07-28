@@ -378,19 +378,26 @@ class FileManager {
         }
         
         $filepath = UPLOAD_DIR . $file['filename'];
-        
+
+        // Files rejected as duplicates or malware during background processing are already
+        // unlinked and quota-refunded by process_file.php before being marked 'failed'. Only
+        // refund here if the file was still on disk, so those don't get refunded a second time.
+        $existedOnDisk = file_exists($filepath) && is_file($filepath);
+
         // Delete file from disk
-        if (file_exists($filepath) && is_file($filepath)) {
+        if ($existedOnDisk) {
             unlink($filepath);
         }
-        
+
         // Update quota (ensure it doesn't go below zero)
-        if ($file['uploaded_by_user']) {
-            $sql = "UPDATE users SET used_quota = GREATEST(0, used_quota - ?) WHERE id = ?";
-            $this->db->query($sql, [$file['file_size'], $file['uploaded_by_user']]);
-        } elseif ($file['uploaded_by_code']) {
-            $sql = "UPDATE access_codes SET used_quota = GREATEST(0, used_quota - ?) WHERE id = ?";
-            $this->db->query($sql, [$file['file_size'], $file['uploaded_by_code']]);
+        if ($existedOnDisk) {
+            if ($file['uploaded_by_user']) {
+                $sql = "UPDATE users SET used_quota = GREATEST(0, used_quota - ?) WHERE id = ?";
+                $this->db->query($sql, [$file['file_size'], $file['uploaded_by_user']]);
+            } elseif ($file['uploaded_by_code']) {
+                $sql = "UPDATE access_codes SET used_quota = GREATEST(0, used_quota - ?) WHERE id = ?";
+                $this->db->query($sql, [$file['file_size'], $file['uploaded_by_code']]);
+            }
         }
         
         // Delete from database
