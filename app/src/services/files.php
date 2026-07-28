@@ -151,10 +151,22 @@ class FileManager {
 
     /**
      * Spawn the background file processor (hashing, dedup, encryption).
+     * Fails the file immediately (instead of leaving it stuck at 'pending')
+     * if the environment can't actually run a background worker.
      */
     private function spawnProcessor($fileId, $hashAlgorithm) {
-        $script = APP_DIR . '/src/services/process_file.php';
+        if (!function_exists('exec')) {
+            $this->failProcessing($fileId, 'Background processing is unavailable on this server (exec() is disabled). Contact an administrator.');
+            return;
+        }
+
         $phpBin = self::findPhpCliBinary();
+        if ($phpBin === null) {
+            $this->failProcessing($fileId, 'Background processing is unavailable: no PHP CLI binary could be located on this server.');
+            return;
+        }
+
+        $script = APP_DIR . '/src/services/process_file.php';
         $cmd = escapeshellarg($phpBin) . ' '
              . escapeshellarg($script) . ' '
              . escapeshellarg((string)$fileId) . ' '
@@ -164,9 +176,21 @@ class FileManager {
     }
 
     /**
+     * Mark a file as failed before processing ever started, and log why.
+     */
+    private function failProcessing($fileId, $message) {
+        error_log("FileManager::spawnProcessor: {$message} (file ID {$fileId})");
+        $this->db->query(
+            "UPDATE files SET processing_status = 'failed', processing_error = ? WHERE id = ?",
+            [$message, $fileId]
+        );
+    }
+
+    /**
      * Locate the PHP CLI binary.  PHP_BINARY points to php-fpm when running
      * under FPM, which cannot execute CLI scripts.  Walk a short list of
-     * well-known paths and fall back to the bare 'php' command.
+     * well-known paths, then fall back to resolving 'php' on PATH.
+     * Returns null if no usable CLI binary can be found at all.
      */
     private static function findPhpCliBinary() {
         // If we are already in CLI, PHP_BINARY is fine.
@@ -189,7 +213,15 @@ class FileManager {
             }
         }
 
-        return 'php'; // rely on PATH
+        // Last resort: see if 'php' resolves to something on PATH at all.
+        if (function_exists('shell_exec')) {
+            $resolved = trim((string) @shell_exec('command -v php 2>/dev/null'));
+            if ($resolved !== '' && is_executable($resolved)) {
+                return $resolved;
+            }
+        }
+
+        return null; // No usable PHP CLI binary found.
     }
 
     /**
