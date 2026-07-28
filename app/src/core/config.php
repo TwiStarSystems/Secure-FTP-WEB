@@ -14,6 +14,11 @@ define('MAX_FILE_SIZE', 10737418240); // 10 GB in bytes
 define('UPLOAD_DIR', APP_BASE . '/app/storage/uploads/');
 define('SESSION_TIMEOUT', 3600); // 1 hour
 
+// If a file has been stuck at processing_status 'pending'/'processing' longer than this
+// (background worker crashed, was never spawned, or never finished), it gets marked 'failed'
+// instead of polling forever with no resolution. See FileManager::spawnProcessor().
+define('PROCESSING_STUCK_TIMEOUT_SECONDS', 1800); // 30 minutes
+
 // Rate limiting settings
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('LOCKOUT_DURATION', 900); // 15 minutes in seconds

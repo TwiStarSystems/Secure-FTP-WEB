@@ -74,4 +74,18 @@ function cleanupOldMfaEmailCodes($db) {
     $db->query($sql);
 }
 
+// Mark files stuck in the async processing pipeline (background worker crashed,
+// was never spawned, or never finished) as 'failed' instead of leaving them to
+// poll forever with no resolution. Does not touch quota or the file on disk —
+// the original bytes are still there, just unhashed/unencrypted; deleting the
+// row via FileManager::deleteFile() is what reconciles quota and disk.
+function cleanupStuckProcessingFiles($db, $maxAgeSeconds = PROCESSING_STUCK_TIMEOUT_SECONDS) {
+    $sql = "UPDATE files
+            SET processing_status = 'failed',
+                processing_error = 'Processing timed out — the background worker did not finish in time.'
+            WHERE processing_status IN ('pending', 'processing')
+              AND upload_date < DATE_SUB(NOW(), INTERVAL ? SECOND)";
+    $db->query($sql, [$maxAgeSeconds]);
+}
+
 ?>

@@ -10,6 +10,7 @@ require_once APP_DIR . '/src/support/smtp_mailer.php';
 require_once APP_DIR . '/src/services/rbac.php';
 
 $db = new Database();
+cleanupStuckProcessingFiles($db);
 $auth = new Auth($db);
 $fileManager = new FileManager($db, $auth);
 $userManager = new UserManager($db);
