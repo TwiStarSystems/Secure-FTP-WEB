@@ -864,9 +864,25 @@ if (
             /**
              * Poll the server for a file's processing status.
              * When finished (ready or failed), update the alert and reload the file table.
+             * Gives up after ~2 minutes instead of polling forever if a file is stuck
+             * (the server-side cleanup will eventually mark it failed on its own timeline;
+             * this just stops hammering the endpoint and tells the user what's going on).
              */
             function pollProcessingStatus(fileId) {
+                var attempts = 0;
+                var maxAttempts = 60; // 60 * 2s = ~2 minutes
                 var interval = setInterval(function() {
+                    attempts++;
+                    if (attempts > maxAttempts) {
+                        clearInterval(interval);
+                        var info = document.getElementById('xhr-processing-info');
+                        if (info) {
+                            info.innerHTML = '<span style="color:var(--color-muted);">\u23F3 Still processing\u2014this is taking longer than expected.</span> '
+                                + '<button type="button" onclick="location.reload()" class="btn btn-small">Check again</button>';
+                        }
+                        return;
+                    }
+
                     var req = new XMLHttpRequest();
                     req.open('GET', 'index.php?action=processing_status&file_id=' + encodeURIComponent(fileId));
                     req.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -900,27 +916,41 @@ if (
                 }, 2000);
             }
 
-            // Auto-poll for any files currently shown as processing in the table
+            // Auto-poll for any files currently shown as processing in the table.
+            // Same ~2 minute give-up cap as pollProcessingStatus() above.
             (function() {
                 var rows = document.querySelectorAll('tr[data-processing="1"]');
                 rows.forEach(function(row) {
                     var fileId = row.getAttribute('data-file-id');
-                    if (fileId) {
-                        var interval = setInterval(function() {
-                            var req = new XMLHttpRequest();
-                            req.open('GET', 'index.php?action=processing_status&file_id=' + encodeURIComponent(fileId));
-                            req.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                            req.onload = function() {
-                                if (req.status !== 200) return;
-                                try { var data = JSON.parse(req.responseText); } catch(e) { return; }
-                                if (data.processing_status === 'ready' || data.processing_status === 'failed') {
-                                    clearInterval(interval);
-                                    location.reload();
-                                }
-                            };
-                            req.send();
-                        }, 3000);
-                    }
+                    if (!fileId) return;
+
+                    var attempts = 0;
+                    var maxAttempts = 40; // 40 * 3s = ~2 minutes
+                    var interval = setInterval(function() {
+                        attempts++;
+                        if (attempts > maxAttempts) {
+                            clearInterval(interval);
+                            var badge = row.querySelector('.processing-badge');
+                            if (badge) {
+                                badge.textContent = '\u23F3 Still processing\u2026';
+                                badge.title = 'This is taking longer than expected. Refresh the page to check again.';
+                            }
+                            return;
+                        }
+
+                        var req = new XMLHttpRequest();
+                        req.open('GET', 'index.php?action=processing_status&file_id=' + encodeURIComponent(fileId));
+                        req.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                        req.onload = function() {
+                            if (req.status !== 200) return;
+                            try { var data = JSON.parse(req.responseText); } catch(e) { return; }
+                            if (data.processing_status === 'ready' || data.processing_status === 'failed') {
+                                clearInterval(interval);
+                                location.reload();
+                            }
+                        };
+                        req.send();
+                    }, 3000);
                 });
             }());
         }());
