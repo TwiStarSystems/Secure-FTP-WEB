@@ -46,20 +46,10 @@ class SecurityMonitor {
             ];
         }
 
-        $windowStartTs = $now - $windowSeconds;
-        $count = 1;
-        if ($state && !empty($state['last_attempt']) && strtotime($state['last_attempt']) >= $windowStartTs) {
-            $count = intval($state['attempt_count']) + 1;
-        }
+        $count = $this->atomicIncrementCounter($actionType, $identifier, $windowSeconds);
 
-        $lockoutUntil = null;
         if ($count > $maxRequests) {
-            $lockoutUntil = date('Y-m-d H:i:s', $now + $lockoutSeconds);
-        }
-
-        $this->saveCounterState($actionType, $identifier, $count, $lockoutUntil);
-
-        if ($lockoutUntil !== null) {
+            $this->setLockout($actionType, $identifier, $lockoutSeconds);
             return [
                 'allowed' => false,
                 'retry_after' => $lockoutSeconds
@@ -97,27 +87,19 @@ class SecurityMonitor {
             ];
         }
 
-        $windowStartTs = $now - $windowSeconds;
-        $count = 1;
-        if ($state && !empty($state['last_attempt']) && strtotime($state['last_attempt']) >= $windowStartTs) {
-            $count = intval($state['attempt_count']) + 1;
-        }
-
-        $lockoutUntil = null;
-        $locked = false;
-        $retryAfter = 0;
+        $count = $this->atomicIncrementCounter($actionType, $identifier, $windowSeconds);
 
         if ($count >= $maxAttempts) {
-            $lockoutUntil = date('Y-m-d H:i:s', $now + $lockoutSeconds);
-            $locked = true;
-            $retryAfter = $lockoutSeconds;
+            $this->setLockout($actionType, $identifier, $lockoutSeconds);
+            return [
+                'locked' => true,
+                'retry_after' => $lockoutSeconds
+            ];
         }
 
-        $this->saveCounterState($actionType, $identifier, $count, $lockoutUntil);
-
         return [
-            'locked' => $locked,
-            'retry_after' => $retryAfter
+            'locked' => false,
+            'retry_after' => 0
         ];
     }
 
@@ -246,15 +228,61 @@ class SecurityMonitor {
         );
     }
 
-    private function saveCounterState($actionType, $identifier, $count, $lockoutUntil = null) {
+    // Atomically increments attempt_count (resetting it to 1 if the sliding window has
+    // elapsed) and returns the resulting count. Uses an explicit transaction with
+    // SELECT ... FOR UPDATE to serialize concurrent callers on the same row: each
+    // caller blocks until the previous one commits, so nobody can read a stale
+    // pre-increment count and undercount real attempts the way the old
+    // read-then-compute-in-PHP-then-write approach did.
+    private function atomicIncrementCounter($actionType, $identifier, $windowSeconds) {
+        $conn = $this->db->getConnection();
+        $conn->beginTransaction();
+
+        try {
+            // Ensure a row exists to lock; no-op update if it's already there.
+            $conn->prepare(
+                "INSERT INTO abuse_counters (action_type, identifier, attempt_count, first_attempt, last_attempt)
+                 VALUES (?, ?, 0, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE id = id"
+            )->execute([$actionType, $identifier]);
+
+            $stmt = $conn->prepare(
+                "SELECT attempt_count, last_attempt FROM abuse_counters
+                 WHERE action_type = ? AND identifier = ? FOR UPDATE"
+            );
+            $stmt->execute([$actionType, $identifier]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $windowStartTs = time() - $windowSeconds;
+            $count = 1;
+            if ($row && !empty($row['last_attempt']) && strtotime($row['last_attempt']) >= $windowStartTs) {
+                $count = intval($row['attempt_count']) + 1;
+            }
+
+            $update = $conn->prepare(
+                "UPDATE abuse_counters
+                 SET attempt_count = ?, last_attempt = NOW()" . ($count === 1 ? ", first_attempt = NOW()" : "") . "
+                 WHERE action_type = ? AND identifier = ?"
+            );
+            $update->execute([$count, $actionType, $identifier]);
+
+            $conn->commit();
+            return $count;
+        } catch (Exception $e) {
+            $conn->rollBack();
+            error_log("SecurityMonitor::atomicIncrementCounter error: " . $e->getMessage());
+            return 1;
+        }
+    }
+
+    // Plain write, not read-modify-write, so it carries no lost-update risk: whichever
+    // concurrent caller crosses the threshold just (re)sets the lockout expiry.
+    private function setLockout($actionType, $identifier, $lockoutSeconds) {
         $this->db->query(
-            "INSERT INTO abuse_counters (action_type, identifier, attempt_count, first_attempt, last_attempt, lockout_until)
-             VALUES (?, ?, ?, NOW(), NOW(), ?)
-             ON DUPLICATE KEY UPDATE
-                attempt_count = VALUES(attempt_count),
-                last_attempt = NOW(),
-                lockout_until = VALUES(lockout_until)",
-            [$actionType, $identifier, $count, $lockoutUntil]
+            "UPDATE abuse_counters
+             SET lockout_until = DATE_ADD(NOW(), INTERVAL ? SECOND)
+             WHERE action_type = ? AND identifier = ?",
+            [$lockoutSeconds, $actionType, $identifier]
         );
     }
 
