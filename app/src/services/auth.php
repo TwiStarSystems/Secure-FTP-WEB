@@ -153,16 +153,18 @@ class Auth {
                 return ['success' => false, 'error' => 'Access code has expired.'];
             }
             
-            // Check if max uses reached (0 means unlimited, but expiry is required at creation time).
-            if (intval($accessCode['max_uses']) > 0 && $accessCode['current_uses'] >= $accessCode['max_uses']) {
+            // Atomically check-and-increment in SQL (0 means unlimited) so two concurrent
+            // requests for the same code can't both pass a stale PHP-side comparison.
+            $sql = "UPDATE access_codes
+                    SET current_uses = current_uses + 1
+                    WHERE id = ? AND is_active = TRUE AND (max_uses = 0 OR current_uses < max_uses)";
+            $stmt = $this->db->query($sql, [$accessCode['id']]);
+
+            if (!$stmt || $stmt->rowCount() === 0) {
                 $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], false);
                 return ['success' => false, 'error' => 'Access code has reached maximum uses.'];
             }
-            
-            // Increment use count
-            $sql = "UPDATE access_codes SET current_uses = current_uses + 1 WHERE id = ?";
-            $this->db->query($sql, [$accessCode['id']]);
-            
+
             // Record successful attempt
             $this->recordLoginAttemptForIdentifiers([$identifier, $ipIdentifier], true);
 
