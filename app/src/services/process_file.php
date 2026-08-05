@@ -80,15 +80,22 @@ if ($fileHash === false) {
 $userId = $file['uploaded_by_user'];
 $codeId = $file['uploaded_by_code'];
 
+// Rows that already failed are tombstones: their bytes were unlinked and their quota
+// refunded, but they keep their hash for the UI. They must not match here, or deleting
+// the real file leaves the tombstone behind to reject every future upload of that
+// content forever. Anything not failed (including a sibling still being processed) is
+// a genuine duplicate. Legacy rows predating the column can be NULL — treat as valid.
+$notTombstone = "AND (processing_status IS NULL OR processing_status <> 'failed')";
+
 $duplicate = null;
 if ($userId !== null) {
     $duplicate = $db->fetch(
-        "SELECT id, original_filename FROM files WHERE file_hash = ? AND hash_algorithm = ? AND uploaded_by_user = ? AND id != ? LIMIT 1",
+        "SELECT id, original_filename FROM files WHERE file_hash = ? AND hash_algorithm = ? AND uploaded_by_user = ? AND id != ? {$notTombstone} LIMIT 1",
         [$fileHash, $hashAlgorithm, $userId, $fileId]
     );
 } elseif ($codeId !== null) {
     $duplicate = $db->fetch(
-        "SELECT id, original_filename FROM files WHERE file_hash = ? AND hash_algorithm = ? AND uploaded_by_code = ? AND id != ? LIMIT 1",
+        "SELECT id, original_filename FROM files WHERE file_hash = ? AND hash_algorithm = ? AND uploaded_by_code = ? AND id != ? {$notTombstone} LIMIT 1",
         [$fileHash, $hashAlgorithm, $codeId, $fileId]
     );
 }
