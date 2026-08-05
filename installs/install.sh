@@ -700,6 +700,21 @@ if [ "$UPDATE_MODE" = true ]; then
         else
             print_message "File encryption key already configured"
         fi
+
+        # Generate MFA secret encryption key if not already set
+        if grep -q "define('MFA_ENCRYPTION_KEY', 'CHANGE_THIS_KEY')" "${APP_DIR}/app/src/core/config.php"; then
+            MFA_ENC_KEY=$(openssl rand -hex 32)
+            sed -i "s|define('MFA_ENCRYPTION_KEY', '[^']*').*|define('MFA_ENCRYPTION_KEY', '${MFA_ENC_KEY}');|" ${APP_DIR}/app/src/core/config.php
+            print_message "MFA encryption key generated for TOTP secret storage"
+        elif ! grep -q "MFA_ENCRYPTION_KEY" "${APP_DIR}/app/src/core/config.php"; then
+            MFA_ENC_KEY=$(openssl rand -hex 32)
+            # Append the define after the FILE_ENCRYPTION_KEY line
+            sed -i "/define('FILE_ENCRYPTION_KEY'/a\\
+\\n// MFA TOTP secret encryption (AES-256-GCM)\\n// IMPORTANT: Generated during installation. Do NOT change after users have enrolled TOTP!\\n// 64 hex characters = 32 bytes = 256-bit key\\ndefine('MFA_ENCRYPTION_KEY', '${MFA_ENC_KEY}');" ${APP_DIR}/app/src/core/config.php
+            print_message "MFA encryption key added to config.php for TOTP secret storage"
+        else
+            print_message "MFA encryption key already configured"
+        fi
     fi
 fi
 
@@ -731,6 +746,11 @@ if [ "$UPDATE_MODE" = false ]; then
         FILE_ENC_KEY=$(openssl rand -hex 32)
         sed -i "s|define('FILE_ENCRYPTION_KEY', '[^']*').*|define('FILE_ENCRYPTION_KEY', '${FILE_ENC_KEY}');|" ${APP_DIR}/app/src/core/config.php
         print_message "File encryption key generated and configured"
+
+        # Generate and set MFA secret encryption key (AES-256 = 32 bytes = 64 hex chars)
+        MFA_ENC_KEY=$(openssl rand -hex 32)
+        sed -i "s|define('MFA_ENCRYPTION_KEY', '[^']*').*|define('MFA_ENCRYPTION_KEY', '${MFA_ENC_KEY}');|" ${APP_DIR}/app/src/core/config.php
+        print_message "MFA encryption key generated and configured"
         
         # Verify the changes were made
         if grep -q "define('DB_PASS', '${DB_PASS_ESCAPED}');" ${APP_DIR}/app/src/core/config.php; then

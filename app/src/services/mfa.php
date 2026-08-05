@@ -58,7 +58,20 @@ class MFAService {
 
         $totpSecret = '';
         if (!empty($row['totp_secret'])) {
-            $totpSecret = $this->decryptSecret($row['totp_secret']);
+            $usedLegacyKey = false;
+            $totpSecret = $this->decryptSecret($row['totp_secret'], $usedLegacyKey);
+
+            // Migrate secrets off the legacy DB-credential-derived key so later
+            // DB config or site name changes cannot break TOTP.
+            if ($totpSecret !== '' && $usedLegacyKey) {
+                $reEncrypted = $this->encryptSecret($totpSecret);
+                if ($reEncrypted !== '') {
+                    $this->db->query(
+                        "UPDATE user_mfa_settings SET totp_secret = ? WHERE user_id = ?",
+                        [$reEncrypted, $userId]
+                    );
+                }
+            }
         }
 
         return [
@@ -333,6 +346,20 @@ class MFAService {
     }
 
     private function getEncryptionKey() {
+        if (defined('MFA_ENCRYPTION_KEY')
+            && MFA_ENCRYPTION_KEY !== 'CHANGE_THIS_KEY'
+            && strlen(MFA_ENCRYPTION_KEY) === 64
+            && ctype_xdigit(MFA_ENCRYPTION_KEY)) {
+            return hex2bin(MFA_ENCRYPTION_KEY);
+        }
+
+        return $this->getLegacyEncryptionKey();
+    }
+
+    private function getLegacyEncryptionKey() {
+        // Key derivation used before MFA_ENCRYPTION_KEY existed. Secrets encrypted
+        // with it become undecryptable if DB credentials or SITE_NAME change, so it
+        // is kept only to decrypt (and re-encrypt) pre-existing secrets.
         return hash('sha256', DB_HOST . '|' . DB_NAME . '|' . DB_USER . '|' . DB_PASS . '|mfa|' . SITE_NAME, true);
     }
 
@@ -361,7 +388,9 @@ class MFAService {
         return self::SECRET_PREFIX . base64_encode($iv . $tag . $cipherText);
     }
 
-    private function decryptSecret($value) {
+    private function decryptSecret($value, &$usedLegacyKey = false) {
+        $usedLegacyKey = false;
+
         if ($value === '') {
             return '';
         }
@@ -372,6 +401,7 @@ class MFAService {
 
         $payload = base64_decode(substr($value, strlen(self::SECRET_PREFIX)), true);
         if ($payload === false || strlen($payload) < 28) {
+            error_log('MFAService: stored TOTP secret is malformed and cannot be decrypted; TOTP will be unavailable for this user.');
             return '';
         }
 
@@ -379,17 +409,37 @@ class MFAService {
         $tag = substr($payload, 12, 16);
         $cipherText = substr($payload, 28);
 
-        $plainText = openssl_decrypt(
+        $currentKey = $this->getEncryptionKey();
+        $plainText = $this->decryptWithKey($cipherText, $currentKey, $iv, $tag);
+        if ($plainText !== false) {
+            return $plainText;
+        }
+
+        // Secrets stored before MFA_ENCRYPTION_KEY existed were encrypted with a
+        // key derived from DB credentials + site name.
+        $legacyKey = $this->getLegacyEncryptionKey();
+        if ($legacyKey !== $currentKey) {
+            $plainText = $this->decryptWithKey($cipherText, $legacyKey, $iv, $tag);
+            if ($plainText !== false) {
+                $usedLegacyKey = true;
+                return $plainText;
+            }
+        }
+
+        error_log('MFAService: failed to decrypt stored TOTP secret (MFA encryption key mismatch — was MFA_ENCRYPTION_KEY, DB config, or SITE_NAME changed?); TOTP will be unavailable for this user.');
+        return '';
+    }
+
+    private function decryptWithKey($cipherText, $key, $iv, $tag) {
+        return openssl_decrypt(
             $cipherText,
             'aes-256-gcm',
-            $this->getEncryptionKey(),
+            $key,
             OPENSSL_RAW_DATA,
             $iv,
             $tag,
             ''
         );
-
-        return $plainText === false ? '' : $plainText;
     }
 }
 ?>
